@@ -20,7 +20,7 @@ init(_Id, Super) ->
 	io:format("ListeningSocket is set as ~p~n", [ListeningSocket]),
 	{ok, {_LAddress, LPort}} = inet:sockname(ListeningSocket),
 	io:format("LPort = ~p~n", [LPort]),
-	talk_router:set_my_address(undefined, LPort),
+	talker_router:set_local_address(undefined, LPort),
 	Super ! {started},
 	server(ListeningSocket).
 
@@ -29,8 +29,8 @@ server(Sock) ->
 	case gen_tcp:accept(Sock) of
 		{undefined, LPort} ->
 			{ok, {MyIp, _}} = inet:sockname(Sock),
-			talk_router:set_my_address(MyIp, LPort),
-			io:format("Set my address as ~p on ~p in talk_router~n", [MyIp, LPort]);
+			talker_router:set_local_address(MyIp, LPort),
+			io:format("Set my address as ~p on ~p in talker_router~n", [MyIp, LPort]);
 		_ ->
 			ok
 	end,
@@ -50,7 +50,7 @@ server(Sock) ->
 			NewPid = talk_sender:new(NewAddress, Port, S),
 			gen_tcp:controlling_process(S, NewPid),
 			inet:setopts(S, [{active, once}]),
-			talk_router:add_connection(NewAddress, Port, NewPid, S),
+			talker_router:add_connection(NewAddress, Port, NewPid, S),
 			server(Sock);
 	_Other ->
 		ok

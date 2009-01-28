@@ -1,4 +1,4 @@
--module (talk_supervisor).
+-module (talker_supervisor).
 
 -behaviour(supervisor).
 
@@ -10,8 +10,8 @@ start_link() ->
 init([]) ->
 	InstanceId = random:uniform(),
     Talk_router =
-	{talk_router,
-	 {talk_router, start_link, []},
+	{talker_router,
+	 {talker_router, start_link, []},
 	 permanent,
 	 brutal_kill,
 	 worker,

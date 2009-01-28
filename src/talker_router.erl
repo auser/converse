@@ -14,6 +14,7 @@
 			send/2,
 			register_connection/4, 
 			unregister_connection/2, 
+			get_all_connections/0,
 			set_local_address/2,
 			get_local_address_port/0
 		]).
@@ -45,6 +46,9 @@ send({Address, Port, Pid}, Message) ->
 		[] ->
 			gen_server:call(?MODULE, {send, Address, Port, Pid, Message}, ?TIMEOUT)
 	end.
+
+get_all_connections() ->
+	handle_get_all_connections().
 
 register_connection(Address, Port, Pid, Socket) ->
 	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket}, ?TIMEOUT).
@@ -172,3 +176,8 @@ handle_forward_message(Address, Port, Pid, Message, State) ->
 					{reply, ok, State}
 			end
 		end.
+
+handle_get_all_connections() ->
+	Add = ets:tab2list(?MODULE),
+	io:format("Addresses ~p~n", [Add]),
+	Add.
