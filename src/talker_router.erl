@@ -5,6 +5,7 @@
 
 -module (talker_router).
 -author ("Ari Lerner").
+-include("talker.hrl").
 
 -behaviour(gen_server).
 
@@ -167,7 +168,7 @@ handle_forward_message(Address, Port, Pid, Message, State) ->
 					{reply, ok, State};
 				{connection, LocalPid, NewSocket} ->
 					talker_connection:send({Address, Port, NewSocket}, Pid, Message),
-					ets:insert(?Message, {{Address, Port}, {LocalPid, NewSocket}}),
+					ets:insert(?MODULE, {{Address, Port}, {LocalPid, NewSocket}}),
 					{reply, ok, State}
 			end
 		end.

@@ -3,6 +3,7 @@
 
 -import(inet).
 -include_lib("kernel/include/inet.hrl").
+-include("talker.hrl").
 
 start_link(Id) ->
 	io:format("Starting ~p talker server~n", [Id]),
