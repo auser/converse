@@ -1,19 +1,19 @@
 -module (talker_hub).
 -export ([start_link/1, init/2]).
 
--import(inet).
 -include_lib("kernel/include/inet.hrl").
 -include("talker.hrl").
 
 start_link(Id) ->
 	io:format("Starting ~p talker server~n", [Id]),
-	Pid = spawn_link(talker, init, [Id, self()]),
+	Pid = spawn_link(talker_hub, init, [Id, self()]),
 	receive
 		{started} ->
 			{ok, Pid}
 	end.
 
-init(_Id, Super) ->
+init(Id, Super) ->
+	io:format("In init for ~p~n", [Id]),
 	erlang:register(?MODULE, self()),
 	io:format("Registered ~p with erlang~n", [self()]),
 	ListeningSocket = open_port_for_listening(5001, my_ip()),

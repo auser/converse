@@ -60,6 +60,8 @@ set_local_address(Address, Port) ->
 	gen_server:call(?SERVER, {set_local_address, Address, Port}, ?TIMEOUT).
 
 get_local_address_port() ->
+	NewPort = ets:lookup(?SERVER, {local_address_port}),
+	io:format("Lookup: ~p~n", [NewPort]),
     case ets:lookup(?SERVER, local_address_port) of
      	[{local_address_port, Value}] ->
  	    Value;
