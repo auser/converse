@@ -1,0 +1,2 @@
+-define (NAMESPACE, ?MODULE).
+-define (TIMEOUT, 20000).
