@@ -1,115 +1,32 @@
 -module (talk_to).
 
--export([send_message/3, open_new/4, new/3]).
+-export([start_link/0, send/2, this/0, here/1]).
 
-new(Add, Port, Socket) ->
-	spawn(fun() -> loop(recv_for(Socket, Add, Port)) end).
 
-open_new(Add, Port, undefined, MyPort) ->
-    LocalPid = spawn(fun () ->
-  			     case new_connection(Add, Port, MyPort) of
-				 Socket ->
-				     {ok, {MyIP, _MyPort}} = inet:sockname(Socket),
-				     self() ! {new_connection_started, MyIP, MyPort, Socket},
-				     loop(Socket, Address, Port);
-				 error -> 
-				     self() ! {new_connection_failed}
-			     end
-  		     end),
-    receive
-  	{new_connection_failed} ->
-	    error;
-  	{new_connection_started, MyIP, MyPort, Sock} ->
-  	    {local_address, MyIP, MyPort, LocalPid, Sock}
+start_link() ->
+    talk_supervisor:start_link().
+
+% send(process_id(), term()) -> ok
+% {ok, Pid} = talk_to:start_link().
+% talk_router:set_my_address({0,0,0,0}, 5001)
+% talk_to:send({{0,0,0,0}, 5001, Pid}, {connect}).
+send({{_IP1, _IP2, _IP3, _IP4} = _IP, _Port, _Pid} = Target, Message) ->
+    {MyIP,MyPort} = talk_router:get_my_address(),
+    %io:format("send: ~p:~p -> ~p:~p(~p) : ~p\n", [MyIP, MyPort, _IP, _Port, _Pid, Message]),
+    IsLocal = (MyIP == _IP) and (MyPort == _Port),
+    if
+ 	IsLocal ->
+ 	    _Pid ! Message;
+ 	true ->
+	    talk_router:send_message(Target, Message)
     end;
-open_new(Address, Port, _MyAddress, MyPort) ->
-    Owner = self(),
-    LocalPid = spawn(fun () ->
-			     case new_connection(Address, Port, MyPort) of
-				 error ->
-				     Owner ! {new_connection_failed};
-				 Socket ->
-				     Owner ! {new_connection_started, Socket},
-				     recv_for(Socket, Address, Port) 
-			     end
-		     end),
-    receive
-	{new_connection_failed} ->
-	    error;
-	{new_connection_started, Socket} ->
-	    {connection, LocalPid, Socket}
-    end.
 
+send(Target, Message) ->
+    io:format("error: ~w ! ~w~n", [Target, Message]),
+    ok.
 
-send_message({Add, Port, Sock}, Pid, Message) ->
-	Bin = term_to_binary({deliver, Pid, Message}),
-	case gen_tcp:send(Sock, Bin) of
-		ok ->
-			ok;
-		{error, close} ->
-			talk_router:remove_connection(Add, Port),
-			gen_tcp:close(Sock);
-		{error, Reason} ->
-			talk_router:remove_connection(Add, Port),
-			gen_tcp:close(Sock)
-	end.
+this() -> here(self()).
 
-recv_for(error, Add, Port) ->
-	talk_router:remove_connection(Add, Port),
-	ok;
-	
-recv_for(Socket, Add, Port) ->
-	receive
-		{send, Pid, Message} ->
-			case send({Add, Port, Socket}, Pid, Message) of
-				ok ->
-					recv_for(Socket, Add, Port);
-				_ ->
-					ok
-			end;
-		{tcp_closed, Socket} ->
-			talk_router:remove_connection(Add, Port),
-			gen_tcp:close(Socket);
-		{tcp, Socket, Data} ->
-			case binary_to_term(Data) of
-				{deliver, Pid, Message} ->
-					Pid ! Message,
-					inet:setopts(Socket, [{active, once}]),
-					recv_for(Socket, Add, Port);
-				{user_close} ->
-					talk_router:remove_connection(Add, Port),
-					gen_tcp:close(Socket);
-				{you_are, _A, _P} ->
-					inet:setopts(Socket, [{active, once}]),
-					recv_for(Socket, Add, Port);
-				Other ->
-					recv_for(Socket, Add, Port)
-			end;
-		{you_are, _I, _P} ->
-			recv_for(Socket, Add, Port);
-		Other ->
-			recv_for(Socket, Add, Port)
-	end.
-
-new_connection(Add, Port, MyPort) ->
-	case gen_tcp:connect(Add, Port, [binary, {packet, 4}, {nodelay, true}, {active, once}], 10000) of
-		{ok, Socket} ->
-			case inet:sockname(Socket) of
-				{ok, {MyAddress, _MPort}} ->
-					gen_tcp:send(Socket, term_to_binary({endpoint, MyAddress, MyPort})),
-					case inet:peername(Socket) of
-						{ok, {RIP, RPort}} ->
-							gen_tcp:send(Socket, term_to_binary({you_are, RIP, RPort})),
-							Socket;
-						{error, Message} ->
-							gen_tcp:close(Socket),
-							new_connection(Add, Port, MyPort)
-					end;
-				{error, Reason} ->
-					gen_tcp:close(Socket),
-					new_connection(Add, Port, MyPort)
-			end;
-		{error, Reason} ->
-			io:format("Could not connect to ~p at ~p because ~p~n", [Add, Port, Reason]),
-			error
-	end.
+here(Pid) ->
+    {LocalIP, LocalPort} = talk_router:get_my_address(),
+    {LocalIP, LocalPort, Pid}.
