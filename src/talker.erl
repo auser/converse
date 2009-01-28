@@ -1,71 +1,34 @@
 -module (talker).
--export ([start_link/1, init/2]).
 
--import(inet).
--include_lib("kernel/include/inet.hrl").
--include("talker.hrl").
+-export([start_link/0, send/2, this/0, here/1]).
 
-start_link(Id) ->
-	io:format("Starting ~p talker server~n", [Id]),
-	Pid = spawn_link(talker, init, [Id, self()]),
-	receive
-		{started} ->
-			{ok, Pid}
-	end.
+-import(io).
+-import(util).
 
-init(_Id, Super) ->
-	erlang:register(?MODULE, self()),
-	io:format("Registered ~p with erlang~n", [self()]),
-	ListeningSocket = open_port_for_listening(5001, my_ip()),
-	io:format("ListeningSocket is set as ~p~n", [ListeningSocket]),
-	{ok, {_LAddress, LPort}} = inet:sockname(ListeningSocket),
-	io:format("LPort = ~p~n", [LPort]),
-	talker_router:set_local_address(undefined, LPort),
-	Super ! {started},
-	server(ListeningSocket).
+start_link() ->
+    talker_supervisor:start_link().
 
-server(Sock) ->
-	io:format("Starting server on ~p~n", [Sock]),
-	case gen_tcp:accept(Sock) of
-		{undefined, LPort} ->
-			{ok, {MyIp, _}} = inet:sockname(Sock),
-			talker_router:set_local_address(MyIp, LPort),
-			io:format("Set my address as ~p on ~p in talker_router~n", [MyIp, LPort]);
-		_ ->
-			ok
-	end,
-	receive
-		{tcp, S, Message} ->
-			{endpoint, Add, Port} = binary_to_term(Message),
-			NewAddress = if Add =:= {0,0,0,0} orelse Add =:= {127,0,0,1} ->
-				case inet:peername(S) of
-					{ok, {PeerAdd, _Port}} ->
-						PeerAdd;
-					{error, _Reason} ->
-						Add
-				end;
-			true ->
-				Add
-			end,
-			NewPid = talk_sender:new(NewAddress, Port, S),
-			gen_tcp:controlling_process(S, NewPid),
-			inet:setopts(S, [{active, once}]),
-			talker_router:add_connection(NewAddress, Port, NewPid, S),
-			server(Sock);
-	_Other ->
-		ok
-	end.
+send({{_IP1, _IP2, _IP3, _IP4} = _IP, _Port, _Pid} = Target, Message) ->
+    {MyIP,MyPort} = talker_router:get_local_address_port(),
+    %io:format("send: ~p:~p -> ~p:~p(~p) : ~p\n", [MyIP, MyPort, _IP, _Port, _Pid, Message]),
+    IsLocal = (MyIP == _IP) and (MyPort == _Port),
+    if
+ 	IsLocal ->
+ 	    _Pid ! Message;
+ 	true ->
+	    talker_router:send(Target, Message)
+    end;
 
-open_port_for_listening(Port, Ip) ->
-	case gen_tcp:listen(Port, [binary, {packet, 4}, {reuseaddr, true}, 
-					      {active, once}, {ip, Ip}]) of
-	{ok, Socket} ->
-	    Socket;
-	{error, Reason} ->
-	    io:format("can't listen on ~p: ~p~n", [Port, Reason])
-    end.
+send(Target, Message) ->
+    io:format("wrong call to cs_send:send: ~w ! ~w~n", [Target, Message]),
+    ok.
 
-my_ip() ->
-    {ok, Hostname} = inet:gethostname(),
-    {ok, HostEntry} = inet:gethostbyname(Hostname),
-    erlang:hd(HostEntry#hostent.h_addr_list).
+%% @doc returns process descriptor for the calling process
+-spec(this/0 :: () -> process_id()).
+this() ->
+    here(self()).
+
+-spec(here/1 :: (pid()) -> process_id()).
+here(Pid) ->
+    {LocalIP, LocalPort} = talker_router:get_local_address_port(),
+    {LocalIP, LocalPort, Pid}.
