@@ -8,7 +8,6 @@ start_link() ->
     supervisor:start_link(?MODULE, []).
 
 init([]) ->
-	InstanceId = random:uniform(),
     Talk_router =
 	{talker_router,
 	 {talker_router, start_link, []},
@@ -16,24 +15,16 @@ init([]) ->
 	 brutal_kill,
 	 worker,
 	 []},
-	TalkerHub = 
-	{talker_hub,
-	{talker_hub, start_link, [InstanceId]},
-	permanent,
-	brutal_kill,
-	worker,
-	[]},
-    Talker =
-	{talker,
-	 {talker, start_link, []},
-	 permanent,
-	 brutal_kill,
-	 worker,
-	 []},
+	%     Talker =
+	% {talker,
+	%  {talker, start_link, []},
+	%  permanent,
+	%  brutal_kill,
+	%  worker,
+	%  []},
     {ok, {{one_for_all, 10, 1},
 	  [
-		Talk_router,
-		TalkerHub,
-		Talker
+		Talk_router
+		% Talker
 	  ]}}.
     

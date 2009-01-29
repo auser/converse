@@ -6,19 +6,12 @@
 
 start_link() ->
 	io:format("Starting sup~n"),
-    talker_supervisor:start_link().
+    Pid = talker_supervisor:start_link(),
+	io:format("Started supervisor ~p~n", [Pid]).
 
-send({{_IP1, _IP2, _IP3, _IP4} = _IP, _Port, _Pid} = Target, Message) ->
-    {MyIP,MyPort} = talker_router:get_local_address_port(),
-    %io:format("send: ~p:~p -> ~p:~p(~p) : ~p\n", [MyIP, MyPort, _IP, _Port, _Pid, Message]),
-    IsLocal = (MyIP == _IP) and (MyPort == _Port),
-    if
- 	IsLocal ->
- 	    _Pid ! Message;
- 	true ->
-	    talker_router:send(Target, Message)
-    end;
-
+send({{_IP1, _IP2, _IP3, _IP4} = Address, Port} = _Target, Message) ->
+	talker_router:send({Address, Port}, Message).
+		
 this() ->
     here(self()).
 

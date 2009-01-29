@@ -4,7 +4,7 @@
 
 -module (talker_connection).
 
--export([send/3, open_new_connection_to/4, new/3]).
+-export([send/3, open_new_connection_to/4, new/3, open_port_for_listening/2]).
 
 -include("talker.hrl").
 
@@ -106,11 +106,12 @@ new_connection(Address, Port, MyPort) ->
     end.
 
 open_port_for_listening(Port, Ip) ->
+	io:format("In open_port_for_listening with ~p:~p~n", [Port, Ip]),
 	case gen_tcp:listen(Port, [binary, {packet, 4}, {reuseaddr, true}, 
-					      {active, once}, {ip, Ip}]) of
+					      {active, once}]) of
 	{ok, Socket} ->
 	    Socket;
-	{error, Reason} ->
-	    io:format("Error: can't listen on ~p: ~p~n", [Port, Reason]),
-		{stop, Reason}
+	Else ->
+	    io:format("Error: can't listen on ~p: ~p~n", [Port, Else]),
+		{stop, Else}
     end.

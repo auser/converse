@@ -26,7 +26,7 @@
 
 %% Macros
 -define(SERVER, ?MODULE).
-
+-record (state, {node}).
 
 %%====================================================================
 %% API
@@ -44,10 +44,12 @@ start_link() ->
 send({Address, Port}, Message) ->
 	case ?DB:lookup(?MODULE, {Address, Port}) of
 		[{{Address, Port}, Node}] -> 
+			io:format("Node at ~p:~p known at ~p~n", [Address, Port, Node]),
 			Pid = Node#node.pid, Address = Node#node.address,
 			talker_connection:send(Address, Pid, Message), ok;
-		[] ->
+		[] ->			
 			NewNode = #node{address = Address, port = Port},
+			io:format("Node at ~p:~p NOT known [~p] ~n", [Address, Port, NewNode]),
 			gen_server:call(?MODULE, {send, NewNode, Message}, ?TIMEOUT)
 	end.
 
@@ -58,6 +60,7 @@ register_connection(Address, Port, Pid, Socket) ->
 	register_connection_with_info(Address, Port, Pid, Socket, {}).
 
 register_connection_with_info(Address, Port, Pid, Socket, Tuple) ->
+	io:format("register_connection_with_info: ~p:~p for ~p, ~p~n", [Address, Port, Pid, Socket]),
 	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Tuple}, ?TIMEOUT).
 
 unregister_connection(Address, Port) ->
@@ -82,19 +85,19 @@ set_local_address(Ip, Port) ->
 %%--------------------------------------------------------------------
 init([]) ->	
 	process_flag(trap_exit, true),
-	erlang:register(?MODULE, self()),
 	% Start the database
 	?DB:new(?MODULE, [set, protected, named_table]),
 	% Start the local connection to self()
 	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
+	io:format("Starting acceptor at ~p:~p~n", [LocalIP, LocalPort]),
 	case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
 		{connection, Pid, Socket} ->
-			NewState = #node{address = LocalIP, port = LocalPort, pid = Pid, socket = Socket},
-		    {ok, NewState};
-		Else ->
-			io:format("Error starting acceptor: ~p~n", [Else]),
-			{ok, ok}
-	end.
+			NewState = update_state_node(LocalIP, LocalPort, Pid, Socket, {}),
+			io:format("Started router with: ~p~n", [NewState]);
+		_Else ->
+			NewState = #state{}
+	end,
+	{ok, NewState}.
 
 handle_call({send, Node, Message}, _From, State) ->
 	handle_forward_message(Node, Message, State);
@@ -131,6 +134,20 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
+handle_info({'EXIT', _Pid, normal}, State) ->
+	{noreply, State};
+
+handle_info({'EXIT', Pid, _Abnormal}, State) ->
+	timer:sleep(?TIMEOUT),
+	Ip = my_ip(), Port = ?DEFAULT_PORT,
+	case talker_acceptor:start_acceptor(Port, Ip, self()) of
+		{connection, Pid, Socket} ->
+			NewState = #node{address = Ip, port = Port, pid = Pid, socket = Socket},
+		    {noreply, NewState};
+		_Else ->
+			{noreply, State}
+	end;	
+	
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -155,14 +172,22 @@ code_change(_OldVsn, State, _Extra) ->
 %% API
 %%------
 handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
+	io:format("In handle_register_connection: ~p:~p~n", [Address, Port]),
 	case ?DB:lookup(?MODULE, {Address, Port}) of
 		[{{Address, Port}, _}] ->
 			io:format("Already registered ~p~n", [Address]),
 			{reply, dups, State};
-		[] ->
-			NewNode = State#node{address=Address, port=Port, pid=Pid, socket=Socket, tuple=Tuple},
-			?DB:insert(?MODULE, {{Address, Port}, NewNode}),
-			{reply, ok, State}
+		[] ->			
+			{MyAddress, MyPort} = {my_ip(), ?DEFAULT_PORT},
+			case Address =:= MyAddress andalso Port =:= MyPort of
+				true ->
+					{reply, self, State};
+				_ ->
+					NewNode = #node{address=Address, port=Port, pid=Pid, socket=Socket, tuple=Tuple},
+					io:format("Not already registered ~p~n", [NewNode]),
+					?DB:insert(?MODULE, {{Address, Port}, NewNode}),
+					{reply, ok, State}
+			end
 	end.
 	
 handle_unregister_connection(Address, Port, State) ->
@@ -170,13 +195,8 @@ handle_unregister_connection(Address, Port, State) ->
 	{reply, ok, State}.
 
 handle_forward_message({{_IP1, _IP2, _IP3, _IP4} = Address, Port}, Message, State) ->	
-	FindNode = State#node{address = Address, port = Port},
-	handle_forward_message(FindNode, Message, State);
-
-handle_forward_message({Node, Message}, _, State) ->
-	Address = Node#node.address, 
-	Port = Node#node.port,
 	{MyAddress, MyPort} = get_local_address_port(),
+	io:format("~p =:= ~p andalso ~p =:= ~p~n", [Address, MyAddress, Port, MyPort]),
 	case (Address =:= MyAddress andalso Port =:= MyPort) of
 		true -> self() ! Message;
 		_ ->
@@ -212,3 +232,7 @@ my_ip() ->
     {ok, Hostname} = inet:gethostname(),
     {ok, HostEntry} = inet:gethostbyname(Hostname),
     erlang:hd(HostEntry#hostent.h_addr_list).
+
+update_state_node(Address, Port, Pid, Socket, Tuple) ->
+	NewNode = #node{address=Address,port=Port,pid=Pid,socket=Socket,tuple=Tuple},
+	#state{node=NewNode}.

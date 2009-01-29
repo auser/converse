@@ -1,17 +1,16 @@
 -module (talker_acceptor).
 -include("talker.hrl").
 
--export ([start_acceptor/3, init/2]).
+-export ([start_acceptor/2, init/2]).
 
-start_acceptor(Port, Ip, Owner) ->
+start_acceptor(Port, Ip) ->
 	io:format("Starting talker_acceptor with ~p, ~p~n", [Port, Ip]),
-	open_socket_and_start_listening(Port, Ip),
-	receive
+	case open_socket_and_start_listening(Port, Ip) of
 		{started, Socket, Pid} -> 
-			Owner ! {connection, Pid, Socket};
+			{connection, Pid, Socket};
 		Else ->
 			io:format("Error when starting acceptor: ~p~n", [Else]),
-			Owner ! {error}
+			{error, Else}
 	end.
 	
 open_socket_and_start_listening(Port, Ip) ->
@@ -22,6 +21,7 @@ open_socket_and_start_listening(Port, Ip) ->
 		Socket ->
 			{ok, {_LAddress, LPort}} = inet:sockname(Socket),
 			Pid = proc_lib:spawn_link(?MODULE, init, [LPort, Socket]),
+			io:format("Started with ~p with ~p~n", [LPort, Socket]),
 			{started, Socket, Pid}
 	end.
 	
