@@ -12,10 +12,10 @@
 %% API
 -export ([	start_link/0,
 			send/2,
-			register_connection/4, 
+			register_connection/4,
+			register_connection_with_info/5, 
 			unregister_connection/2, 
 			get_all_connections/0,
-			set_local_address/2,
 			get_local_address_port/0
 		]).
 
@@ -25,6 +25,7 @@
 
 %% Macros
 -define(SERVER, ?MODULE).
+
 
 %%====================================================================
 %% API
@@ -38,37 +39,31 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, [], []).
 
-send({Address, Port, Pid}, Message) ->
-	case ets:lookup(?MODULE, {Address, Port}) of
-		[{{Address, Port}, {_LPid, Socket}}] ->
-			talker_connection:send({Address, Port, Socket}, Pid, Message),
-			ok;
+% Send pass the Message to the node at Address and Port
+send({Address, Port}, Message) ->
+	case ?DB:lookup(?MODULE, {Address, Port}) of
+		[{{Address, Port}, Node}] -> 
+			Pid = Node#node.pid, Address = Node#node.address,
+			talker_connection:send(Address, Pid, Message), ok;
 		[] ->
-			gen_server:call(?MODULE, {send, Address, Port, Pid, Message}, ?TIMEOUT)
+			NewNode = #node{address = Address, port = Port},
+			gen_server:call(?MODULE, {send, NewNode, Message}, ?TIMEOUT)
 	end.
 
 get_all_connections() ->
 	handle_get_all_connections().
 
 register_connection(Address, Port, Pid, Socket) ->
-	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket}, ?TIMEOUT).
+	register_connection_with_info(Address, Port, Pid, Socket, {}).
+
+register_connection_with_info(Address, Port, Pid, Socket, Tuple) ->
+	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Tuple}, ?TIMEOUT).
 
 unregister_connection(Address, Port) ->
 	gen_server:call(?SERVER, {unregister_connection, Address, Port}, ?TIMEOUT).
 
-set_local_address(Address, Port) ->
-	gen_server:call(?SERVER, {set_local_address, Address, Port}, ?TIMEOUT).
-
 get_local_address_port() ->
-	NewPort = ets:lookup(?SERVER, {local_address_port}),
-	io:format("Lookup: ~p~n", [NewPort]),
-    case ets:lookup(?SERVER, local_address_port) of
-     	[{local_address_port, Value}] ->
- 	    Value;
- 	[] ->
- 	    undefined
-    end.
-
+	gen_server:call(?SERVER, {get_local_address_port}, ?TIMEOUT).
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -82,20 +77,25 @@ get_local_address_port() ->
 %%--------------------------------------------------------------------
 init([]) ->	
 	process_flag(trap_exit, true),
-	ets:new(?MODULE, [set, protected, named_table]),
-    {ok, ok}.
+	?DB:new(?MODULE, [set, protected, named_table]),
+	{ok, Hostname} = inet:gethostname(),
+    {ok, HostEntry} = inet:gethostbyname(Hostname),
+    [LocalIP|_] = HostEntry#hostent.h_addr_list,
+	LocalPort = ?DEFAULT_PORT,
+	NewState = #node{address = LocalIP, port = LocalPort},
+    {ok, NewState}.
 
-handle_call({send, Address, Port, Pid, Message}, _From, State) ->
-	handle_forward_message(Address, Port, Pid, Message, State);
+handle_call({send, Node, Message}, _From, State) ->
+	handle_forward_message(Node, Message, State);
 	
-handle_call({register_connection, Address, Port, Pid, Socket}, _From, State) ->
-	handle_register_connection(Address, Port, Pid, Socket, State);
+handle_call({register_connection, Address, Port, Pid, Socket, Tuple}, _From, State) ->
+	handle_register_connection(Address, Port, Pid, Socket, Tuple, State);
 
 handle_call({unregister_connection, Address, Port}, _From, State) ->
 	handle_unregister_connection(Address, Port, State);
-	
-handle_call({set_local_address, Address, Port}, _From, State) ->
-	handle_set_local_address(Address, Port, State);
+
+handle_call({get_local_address_port}, _From, State)	->
+	handle_get_local_address_port(State);
 	
 handle_call(Request, _From, State) ->
 	io:format("Received request ~p in talk_router~n", [Request]),
@@ -140,46 +140,52 @@ code_change(_OldVsn, State, _Extra) ->
 %%------
 %% API
 %%------
-handle_register_connection(Address, Port, Pid, Socket, State) ->
-	case ets:lookup(?MODULE, {Address, Port}) of
+handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
+	case ?DB:lookup(?MODULE, {Address, Port}) of
 		[{{Address, Port}, _}] ->
+			io:format("Already registered ~p~n", [Address]),
 			{reply, dups, State};
 		[] ->
-			ets:insert(?MODULE, {{Address, Port}, {Pid, Socket}}),
+			NewNode = State#node{address=Address, port=Port, pid=Pid, socket=Socket, tuple=Tuple},
+			?DB:insert(?MODULE, {{Address, Port}, NewNode}),
 			{reply, ok, State}
 	end.
 	
 handle_unregister_connection(Address, Port, State) ->
-	ets:delete(?MODULE, {Address, Port}),
+	?DB:delete(?MODULE, {Address, Port}),
 	{reply, ok, State}.
 
-handle_set_local_address(Address, Port, State) ->
-	ets:insert(?MODULE, {local_address_port, {Address, Port}}),
-	{reply, ok, State}.
+handle_forward_message({{_IP1, _IP2, _IP3, _IP4} = Address, Port}, Message, State) ->	
+	FindNode = State#node{address = Address, port = Port},
+	handle_forward_message(FindNode, Message, State);
 
-handle_forward_message(Address, Port, Pid, Message, State) ->
-	case ets:lookup(?MODULE, {Address, Port}) of
-		[{{Address, Port}, {_LPid, Socket}}] ->
-			talker_connection:send({Address, Port, Socket}, Pid, Message),
+handle_forward_message({Node, Message}, _, State) ->
+	Address = Node#node.address, 
+	Port = Node#node.port,
+	{MyAddress, MyPort} = get_local_address_port(),
+	case (Address =:= MyAddress andalso Port =:= MyPort) of
+		true -> self() ! Message;
+		_ ->
+			handle_remote_forward_message(Address, Port, Message, State)
+	end.
+	
+handle_remote_forward_message(Address, Port, Message, State) ->
+	case ?DB:lookup(?MODULE, {Address, Port}) of
+		[{{Address, Port}, Node}] ->
+			talker_connection:send(Node, Message),
 			{reply, ok, State};
 		[] ->
-			{InitAddr, InitPort} = get_local_address_port(),
-			case talker_connection:open_new(Address, Port, InitAddr, InitPort) of
-				{local_ip, NewIP, NewPort, NewPid, NewSocket} ->
-					talker_connection:send({Address, Port, NewSocket}, Pid, Message),
-					ets:insert(?MODULE, {local_address_port, {NewIP, NewPort}}),
-					ets:insert(?MODULE, {{Address, Port}, {NewPid, NewSocket}}),
-					{reply, ok, State};
-				fail ->
-					{reply, ok, State};
-				{connection, LocalPid, NewSocket} ->
-					talker_connection:send({Address, Port, NewSocket}, Pid, Message),
-					ets:insert(?MODULE, {{Address, Port}, {LocalPid, NewSocket}}),
-					{reply, ok, State}
-			end
-		end.
+			{reply, unknown_node, State};
+		Unknown ->
+			io:format("Unknown response to handle_remote_forward_message: ~p~n", [Unknown]),
+			{reply, ok, State}
+	end.
+
 
 handle_get_all_connections() ->
-	Add = ets:tab2list(?MODULE),
-	io:format("Addresses ~p~n", [Add]),
-	Add.
+	?DB:tab2list(?MODULE).
+
+handle_get_local_address_port(State) ->
+	LocalAddress = State#node.address,
+	LocalPort = State#node.port,
+	{reply, {LocalAddress, LocalPort}, State}.
