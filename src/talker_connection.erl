@@ -4,11 +4,11 @@
 
 -module (talker_connection).
 
--export([send/3, open_new/4, new/3]).
+-export([send/3, open_new_connection/4, new/3]).
 
 -include("talker.hrl").
 
-new(Address, Port, Socket) ->
+new(Address, Port, Socket) -> 
 	spawn(fun() -> loop(Socket, Address, Port) end).
 
 open_new(Address, Port, undefined, MyPort) ->
@@ -97,8 +97,7 @@ loop(Socket, Address, Port) ->
 	end.
 
 new_connection(Address, Port, MyPort) ->
-    case gen_tcp:connect(Address, Port, [binary, 
-					{packet, 4}, {nodelay, true}, {active, once}, {send_timeout, 60000}], 15000) of
+    case gen_tcp:connect(Address, Port, ?PACKET_SETUP, 15000) of
         {ok, Socket} ->
 	    case inet:sockname(Socket) of
 		{ok, {MyAddress, _MyPort}} ->
