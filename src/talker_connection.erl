@@ -4,32 +4,14 @@
 
 -module (talker_connection).
 
--export([send/3, open_new_connection/4, new/3]).
+-export([send/3, open_new_connection_to/4, new/3]).
 
 -include("talker.hrl").
 
 new(Address, Port, Socket) -> 
 	spawn(fun() -> loop(Socket, Address, Port) end).
 
-open_new(Address, Port, undefined, MyPort) ->
-	Myself = self(),
-	LPid = spawn(fun() ->
-		case new_connection(Address, Port, MyPort) of
-			fail ->
-				Myself ! {new_connection_failed};
-			Socket ->
-				{ok, {MyIP, _Port}} = inet:sockname(Socket),
-				Myself ! {new_connection_started, MyIP, MyPort, Socket},
-				loop(Socket, Address, Port)
-			end
-		end),
-	receive
-		{new_connection_failed} -> fail;
-		{new_connection_started, MyIP, MyPort, Sock} ->
-			{local_ip, MyIP, MyPort, LPid, Sock}
-	end;
-
-open_new(Address, Port, _NewAddress, MyPort) ->
+open_new_connection_to(Address, Port, _NewAddress, MyPort) ->
 	Owner = self(),
 	LPid = spawn(fun() ->
 			case new_connection(Address, Port, MyPort) of
@@ -75,8 +57,10 @@ loop(Socket, Address, Port) ->
 					ok
 			end;
 		{tcp_closed, Socket} ->
+			% remove the connection if the tcp socket has closed
 			talker_router:unregister_connection(Address, Port),
 			gen_tcp:close(Socket);
+		% if we have received a tcp message
 		{tcp, Socket, Data} ->
 			case binary_to_term(Data) of
 				{deliver, Process, Message} ->
@@ -121,3 +105,12 @@ new_connection(Address, Port, MyPort) ->
 	    fail
     end.
 
+open_port_for_listening(Port, Ip) ->
+	case gen_tcp:listen(Port, [binary, {packet, 4}, {reuseaddr, true}, 
+					      {active, once}, {ip, Ip}]) of
+	{ok, Socket} ->
+	    Socket;
+	{error, Reason} ->
+	    io:format("Error: can't listen on ~p: ~p~n", [Port, Reason]),
+		{stop, Reason}
+    end.

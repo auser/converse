@@ -16,7 +16,8 @@
 			register_connection_with_info/5, 
 			unregister_connection/2, 
 			get_all_connections/0,
-			get_local_address_port/0
+			get_local_address_port/0,
+			set_local_address/2
 		]).
 
 %% gen_server callbacks
@@ -64,6 +65,10 @@ unregister_connection(Address, Port) ->
 
 get_local_address_port() ->
 	gen_server:call(?SERVER, {get_local_address_port}, ?TIMEOUT).
+	
+set_local_address(Ip, Port) ->
+	gen_server:call(?SERVER, {set_local_address, Ip, Port}, ?TIMEOUT).
+	
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -77,13 +82,19 @@ get_local_address_port() ->
 %%--------------------------------------------------------------------
 init([]) ->	
 	process_flag(trap_exit, true),
+	erlang:register(?MODULE, self()),
+	% Start the database
 	?DB:new(?MODULE, [set, protected, named_table]),
-	{ok, Hostname} = inet:gethostname(),
-    {ok, HostEntry} = inet:gethostbyname(Hostname),
-    [LocalIP|_] = HostEntry#hostent.h_addr_list,
-	LocalPort = ?DEFAULT_PORT,
-	NewState = #node{address = LocalIP, port = LocalPort},
-    {ok, NewState}.
+	% Start the local connection to self()
+	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
+	case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
+		{connection, Pid, Socket} ->
+			NewState = #node{address = LocalIP, port = LocalPort, pid = Pid, socket = Socket},
+		    {ok, NewState};
+		Else ->
+			io:format("Error starting acceptor: ~p~n", [Else]),
+			{ok, ok}
+	end.
 
 handle_call({send, Node, Message}, _From, State) ->
 	handle_forward_message(Node, Message, State);
@@ -96,6 +107,9 @@ handle_call({unregister_connection, Address, Port}, _From, State) ->
 
 handle_call({get_local_address_port}, _From, State)	->
 	handle_get_local_address_port(State);
+
+handle_call({set_local_address, Ip, Port}, _From, State) ->
+	handle_set_local_address(Ip, Port, State);
 	
 handle_call(Request, _From, State) ->
 	io:format("Received request ~p in talk_router~n", [Request]),
@@ -189,3 +203,12 @@ handle_get_local_address_port(State) ->
 	LocalAddress = State#node.address,
 	LocalPort = State#node.port,
 	{reply, {LocalAddress, LocalPort}, State}.
+
+handle_set_local_address(Ip, Port, State) ->
+	NewState = State#node{address = Ip, port = Port},
+	{ok, NewState}.
+
+my_ip() ->
+    {ok, Hostname} = inet:gethostname(),
+    {ok, HostEntry} = inet:gethostbyname(Hostname),
+    erlang:hd(HostEntry#hostent.h_addr_list).

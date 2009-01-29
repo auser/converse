@@ -3,7 +3,6 @@
 -export([start_link/0, send/2, this/0, here/1]).
 
 -import(io).
--import(utils).
 
 start_link() ->
 	io:format("Starting sup~n"),
@@ -19,13 +18,6 @@ send({{_IP1, _IP2, _IP3, _IP4} = _IP, _Port, _Pid} = Target, Message) ->
  	true ->
 	    talker_router:send(Target, Message)
     end;
-
-send(Target, Message) ->
-    io:format("wrong call to cs_send:send: ~w ! ~w~n", [Target, Message]),
-    ok.
-
-this() ->
-    here(self()).
 
 here(Pid) ->
     {LocalIP, LocalPort} = talker_router:get_local_address_port(),
