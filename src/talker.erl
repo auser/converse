@@ -19,6 +19,9 @@ send({{_IP1, _IP2, _IP3, _IP4} = _IP, _Port, _Pid} = Target, Message) ->
 	    talker_router:send(Target, Message)
     end;
 
+this() ->
+    here(self()).
+
 here(Pid) ->
     {LocalIP, LocalPort} = talker_router:get_local_address_port(),
     {LocalIP, LocalPort, Pid}.
