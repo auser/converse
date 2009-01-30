@@ -5,13 +5,12 @@
 -import(io).
 
 start_link() ->
-	io:format("Starting sup~n"),
-    Pid = talker_supervisor:start_link(),
+    Pid = talker_supervisor:start(),
 	io:format("Started supervisor ~p~n", [Pid]).
 
-send({{_IP1, _IP2, _IP3, _IP4} = Address, Port} = _Target, Message) ->
+send({Address, Port}, Message) ->
 	talker_router:send({Address, Port}, Message).
-		
+
 this() ->
     here(self()).
 

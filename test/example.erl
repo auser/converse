@@ -11,4 +11,5 @@ talker_router:unregister_connection({0,0,0,1}, 5001).
 talker_router:get_all_connections().
 
 % talker
+talker:start_link().
 talker:send({{10,47,90,162}, 5001}, {hi}).

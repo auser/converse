@@ -42,15 +42,14 @@ start_link() ->
 
 % Send pass the Message to the node at Address and Port
 send({Address, Port}, Message) ->
-	case ?DB:lookup(?MODULE, {Address, Port}) of
+	io:format("Looking to send message to: ~p:~p~n", [Address, Port]),
+	case ?DB:find_node(Address, Port) of
 		[{{Address, Port}, Node}] -> 
 			io:format("Node at ~p:~p known at ~p~n", [Address, Port, Node]),
 			Pid = Node#node.pid, Address = Node#node.address,
 			talker_connection:send(Address, Pid, Message), ok;
 		[] ->			
-			NewNode = #node{address = Address, port = Port},
-			io:format("Node at ~p:~p NOT known [~p] ~n", [Address, Port, NewNode]),
-			gen_server:call(?MODULE, {send, NewNode, Message}, ?TIMEOUT)
+			gen_server:call(?MODULE, {send, Address, Port, Message}, ?TIMEOUT)
 	end.
 
 get_all_connections() ->
@@ -86,7 +85,7 @@ set_local_address(Ip, Port) ->
 init([]) ->	
 	process_flag(trap_exit, true),
 	% Start the database
-	?DB:new(?MODULE, [set, protected, named_table]),
+	talker_db:start(),
 	% Start the local connection to self()
 	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
 	io:format("Starting acceptor at ~p:~p~n", [LocalIP, LocalPort]),
@@ -99,8 +98,8 @@ init([]) ->
 	end,
 	{ok, NewState}.
 
-handle_call({send, Node, Message}, _From, State) ->
-	handle_forward_message(Node, Message, State);
+handle_call({send, Address, Port, Message}, _From, State) ->
+	handle_forward_message(Address, Port, Message, State);
 	
 handle_call({register_connection, Address, Port, Pid, Socket, Tuple}, _From, State) ->
 	handle_register_connection(Address, Port, Pid, Socket, Tuple, State);
@@ -173,7 +172,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%------
 handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
 	io:format("In handle_register_connection: ~p:~p~n", [Address, Port]),
-	case ?DB:lookup(?MODULE, {Address, Port}) of
+	case ?DB:find_node(Address, Port) of
 		[{{Address, Port}, _}] ->
 			io:format("Already registered ~p~n", [Address]),
 			{reply, dups, State};
@@ -183,18 +182,16 @@ handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
 				true ->
 					{reply, self, State};
 				_ ->
-					NewNode = #node{address=Address, port=Port, pid=Pid, socket=Socket, tuple=Tuple},
-					io:format("Not already registered ~p~n", [NewNode]),
-					?DB:insert(?MODULE, {{Address, Port}, NewNode}),
+					?DB:insert_node(Address, Port, Pid, Socket, Tuple),
 					{reply, ok, State}
 			end
 	end.
 	
 handle_unregister_connection(Address, Port, State) ->
-	?DB:delete(?MODULE, {Address, Port}),
+	?DB:delete_node(Address, Port),
 	{reply, ok, State}.
 
-handle_forward_message({{_IP1, _IP2, _IP3, _IP4} = Address, Port}, Message, State) ->	
+handle_forward_message(Address, Port, Message, State) ->
 	{MyAddress, MyPort} = get_local_address_port(),
 	io:format("~p =:= ~p andalso ~p =:= ~p~n", [Address, MyAddress, Port, MyPort]),
 	case (Address =:= MyAddress andalso Port =:= MyPort) of
@@ -204,7 +201,7 @@ handle_forward_message({{_IP1, _IP2, _IP3, _IP4} = Address, Port}, Message, Stat
 	end.
 	
 handle_remote_forward_message(Address, Port, Message, State) ->
-	case ?DB:lookup(?MODULE, {Address, Port}) of
+	case ?DB:find_node(Address, Port) of
 		[{{Address, Port}, Node}] ->
 			talker_connection:send(Node, Message),
 			{reply, ok, State};
@@ -217,7 +214,7 @@ handle_remote_forward_message(Address, Port, Message, State) ->
 
 
 handle_get_all_connections() ->
-	?DB:tab2list(?MODULE).
+	?DB:select_all(node).
 
 handle_get_local_address_port(State) ->
 	LocalAddress = State#node.address,

@@ -2,29 +2,35 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, init/1]).
+-export([start/0, start_in_shell_for_testing/0, start_link/0, init/1]).
+
+start() -> start_link().
+
+start_in_shell_for_testing() ->
+	{ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, _Arg = []),
+	unlink(Pid).
 
 start_link() ->
-    supervisor:start_link(?MODULE, []).
+	spawn(fun() ->
+			supervisor:start_link({local, ?MODULE}, ?MODULE, _Arg = [])
+		end).
 
 init([]) ->
-    Talk_router =
-	{talker_router,
-	 {talker_router, start_link, []},
-	 permanent,
-	 brutal_kill,
-	 worker,
-	 []},
-	%     Talker =
-	% {talker,
-	%  {talker, start_link, []},
-	%  permanent,
-	%  brutal_kill,
-	%  worker,
-	%  []},
-    {ok, {{one_for_all, 10, 1},
-	  [
-		Talk_router
-		% Talker
-	  ]}}.
+	RestartStrategy = one_for_one,
+	MaxRestarts = 1000,
+	MaxTimeBetRestarts = 3600,
+	TimeoutTime = 5000,
+	
+	SupFlags = {RestartStrategy, MaxRestarts, MaxTimeBetRestarts},
+	
+    TalkRouter = {talker_router, 
+		{talker_router, start_link, []}, 
+		permanent, 
+		TimeoutTime, 
+		worker, 
+		[talker_router]},
+
+    LoadServers = [TalkRouter],
+
+	{ok, {SupFlags, LoadServers}}.
     
