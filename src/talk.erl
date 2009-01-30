@@ -1,4 +1,4 @@
--module (talker).
+-module (talk).
 
 -compile (export_all).
 
