@@ -18,6 +18,9 @@
 			get_local_address_port/0,
 			set_local_address/2
 		]).
+		
+-export ([	testing_register_connection/5,
+			testing_unregister_connection/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -30,14 +33,6 @@
 %%====================================================================
 %% API
 %%====================================================================
-
-%%--------------------------------------------------------------------
-%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
-%% Description: Starts the server
-%%--------------------------------------------------------------------
-
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, [], []).
 
 % Send pass the Message to the node at Address and Port
 send({Address, Port}, Message) ->
@@ -63,9 +58,15 @@ register_connection(Address, Port, Info) ->
 		Else ->
 			io:format("Error when registering: ~p~n", [Else]),
 			{error}
-	end.	
+	end.
+	
+testing_register_connection(Address, Port, Pid, Socket, Info) ->
+	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Info}, ?TIMEOUT).
 
 unregister_connection(Address, Port) ->
+	gen_server:call(?SERVER, {unregister_connection, Address, Port}, ?TIMEOUT).
+
+testing_unregister_connection(Address, Port) ->
 	gen_server:call(?SERVER, {unregister_connection, Address, Port}, ?TIMEOUT).
 
 get_local_address_port() ->
@@ -79,6 +80,14 @@ set_local_address(Ip, Port) ->
 %%====================================================================
 
 %%--------------------------------------------------------------------
+%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
+%% Description: Starts the server
+%%--------------------------------------------------------------------
+
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, [], []).
+
+%%--------------------------------------------------------------------
 %% Function: init(Args) -> {ok, State} |
 %%                         {ok, State, Timeout} |
 %%                         ignore               |
@@ -90,16 +99,8 @@ init([]) ->
 	% Start the database
 	talker_db:start(),
 	% Start the local connection to self()
-	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
-	io:format("Starting acceptor at ~p:~p~n", [LocalIP, LocalPort]),
-	case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
-		{connection, Pid, Socket} ->
-			NewState = update_state_node(LocalIP, LocalPort, Pid, Socket, {}),
-			io:format("Started router with: ~p~n", [NewState]);
-		_Else ->
-			NewState = #state{}
-	end,
-	io:format("Finished init([]) with ~p~n", [NewState]),
+	pg2:create(?SERVER),
+	NewState = handle_init_and_start_acceptor(),
 	{ok, NewState}.
 
 handle_call({send, Address, Port, Message}, _From, State) ->
@@ -163,6 +164,7 @@ handle_info(Info, State) ->
 %% The return value is ignored.
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
+	pg2:leave(?SERVER, self()),
     ok.
 
 %%--------------------------------------------------------------------
@@ -188,13 +190,22 @@ handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
 					{reply, self, State};
 				_ ->
 					?DB:insert_node(Address, Port, Pid, Socket, Tuple),
+					pg2:join(?SERVER, Pid),
 					{reply, ok, State}
 			end
 	end.
 	
-handle_unregister_connection(Address, Port, State) ->
-	?DB:delete_node(Address, Port),
-	{reply, ok, State}.
+handle_unregister_connection(Add, P, State) ->
+	Reply = case ?DB:find_node(Add, P) of
+
+		[{{_FAddress, _FPort}, {address=Address, port=Port, pid=Pid}}] ->
+			?DB:delete_node(Address, Port),
+			pg2:leave(?SERVER, Pid),
+			ok;
+		_ ->
+			ok
+	end,
+	{reply, Reply, State}.
 
 handle_forward_message(Address, Port, Message, State) ->
 	{MyAddress, MyPort} = get_local_address_port(),
@@ -229,6 +240,18 @@ handle_get_local_address_port(State) ->
 handle_set_local_address(Ip, Port, State) ->
 	NewState = State#node{address = Ip, port = Port},
 	{ok, NewState}.
+
+handle_init_and_start_acceptor() ->	
+	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
+	NewState = case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
+		{connection, Pid, Socket} -> 
+			pg2:join(?SERVER, Pid),
+			update_state_node(LocalIP, LocalPort, Pid, Socket, {});
+		_Else -> 
+			#state{}
+	end,	
+	io:format("Finished init([]) with ~p~n", [NewState]),
+	NewState.
 
 my_ip() ->
     {ok, Hostname} = inet:gethostname(),

@@ -5,7 +5,7 @@
 -import(io).
 
 start_link() ->
-    Pid = talker_supervisor:start(),
+    Pid = talker_supervisor:start_link(),
 	io:format("Started supervisor ~p~n", [Pid]).
 
 send({Address, Port}, Message) ->
