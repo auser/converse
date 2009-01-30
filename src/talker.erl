@@ -1,6 +1,6 @@
 -module (talker).
 
--export([start_link/0, send/2, this/0, here/1]).
+-compile (export_all).
 
 -import(io).
 
@@ -10,6 +10,15 @@ start_link() ->
 
 send({Address, Port}, Message) ->
 	talker_router:send({Address, Port}, Message).
+
+add(Address, Port, Info) ->
+	talker_router:register_connection(Address, Port, Info).
+
+remove(Address, Port) ->
+	talker_router:unregister_connection(Address, Port).
+
+clear() ->
+	talker_db:delete_all(node).
 
 this() ->
     here(self()).

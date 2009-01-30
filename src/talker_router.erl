@@ -12,8 +12,7 @@
 %% API
 -export ([	start_link/0,
 			send/2,
-			register_connection/4,
-			register_connection_with_info/5, 
+			register_connection/3,
 			unregister_connection/2, 
 			get_all_connections/0,
 			get_local_address_port/0,
@@ -55,12 +54,16 @@ send({Address, Port}, Message) ->
 get_all_connections() ->
 	handle_get_all_connections().
 
-register_connection(Address, Port, Pid, Socket) ->
-	register_connection_with_info(Address, Port, Pid, Socket, {}).
-
-register_connection_with_info(Address, Port, Pid, Socket, Tuple) ->
-	io:format("register_connection_with_info: ~p:~p for ~p, ~p~n", [Address, Port, Pid, Socket]),
-	gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Tuple}, ?TIMEOUT).
+register_connection(Address, Port, Info) ->
+	% Pid, Socket
+	MyIp = my_ip(),
+	case talker_connection:open_new_connection_to(Address, Port, MyIp, ?DEFAULT_PORT) of
+		{connection, Pid, Socket} ->
+			gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Info}, ?TIMEOUT);
+		Else ->
+			io:format("Error when registering: ~p~n", [Else]),
+			{error}
+	end.	
 
 unregister_connection(Address, Port) ->
 	gen_server:call(?SERVER, {unregister_connection, Address, Port}, ?TIMEOUT).
@@ -96,6 +99,7 @@ init([]) ->
 		_Else ->
 			NewState = #state{}
 	end,
+	io:format("Finished init([]) with ~p~n", [NewState]),
 	{ok, NewState}.
 
 handle_call({send, Address, Port, Message}, _From, State) ->
@@ -147,7 +151,8 @@ handle_info({'EXIT', Pid, _Abnormal}, State) ->
 			{noreply, State}
 	end;	
 	
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+	io:format("Info: ~p~n", [Info]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

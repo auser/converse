@@ -42,6 +42,10 @@ delete_node(Address, Port) ->
 select_all(Tab) ->
 	do(qlc:q([X || X <- mnesia:table(Tab)])).
 
+delete_all(Tab) ->
+	AllKeys = do(qlc:q([X#node.key || X <- mnesia:table(Tab)])),
+	[delete(K) || K <- AllKeys].
+
 do(Q) ->
     F = fun() -> qlc:e(Q) end,
     {atomic, Val} = mnesia:transaction(F),

@@ -101,7 +101,7 @@ new_connection(Address, Port, MyPort) ->
 	            new_connection(Address, Port, MyPort)
 	    end;
         {error, Reason} ->
-            log:log2file(comm_connection, io_lib:format("couldn't connect to ~p:~p (~p)~n", [Address, Port, Reason])),
+            io_lib:format("couldn't connect to ~p:~p (~p)~n", [Address, Port, Reason]),
 	    fail
     end.
 
