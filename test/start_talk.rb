@@ -1,8 +1,10 @@
 require "rubygems"
 require "skelerl"
 
-erlang do  
-  options :path => "/../ebin"
+erlang do
+  # testing true
+  
+  options :path => "./ebin"
   
   with_node(:node0, :stop => false) do
     talker:start_link
