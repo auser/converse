@@ -14,9 +14,14 @@
 			send/2,
 			register_connection/3,
 			unregister_connection/2, 
-			get_all_connections/0,
+			all_connections/0,
 			get_local_address_port/0,
-			set_local_address/2
+			set_local_address/2,
+			all_pids/0, local_pid/0,
+			send_to_all/1,
+			find_node/2,
+			all_nodes/0,
+			all/0
 		]).
 		
 -export ([	testing_register_connection/5,
@@ -46,7 +51,11 @@ send({Address, Port}, Message) ->
 			gen_server:call(?MODULE, {send, Address, Port, Message}, ?TIMEOUT)
 	end.
 
-get_all_connections() ->
+send_to_all(Message) ->
+	Pids = all_pids(),
+	[X ! Message || X <- Pids].
+
+all_connections() ->
 	handle_get_all_connections().
 
 register_connection(Address, Port, Info) ->
@@ -75,6 +84,26 @@ get_local_address_port() ->
 set_local_address(Ip, Port) ->
 	gen_server:call(?SERVER, {set_local_address, Ip, Port}, ?TIMEOUT).
 	
+local_pid() ->
+	gen_server:call(?SERVER, {get_my_pid}, ?TIMEOUT).
+
+all() ->
+	AllNodes = all_nodes(),
+	[X#node.pid || X <-AllNodes].
+
+all_nodes() ->
+	gen_server:call(?SERVER, {all_nodes}, ?TIMEOUT).
+
+all_pids() ->
+	pg2:get_members(?SERVER).
+
+find_node(Address, Port) ->
+	case ?DB:find_node(Address, Port) of
+		[{{Address, Port}, Node}] -> Node;
+		_ ->
+			unknown
+	end.
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -99,8 +128,9 @@ init([]) ->
 	% Start the database
 	talker_db:start(),
 	% Start the local connection to self()
-	pg2:create(?SERVER),
+	pg2:start_link(), pg2:create(?SERVER),
 	NewState = handle_init_and_start_acceptor(),
+	% io:format("State is record: ~p~n", [erlang:is_record(state, NewState)]),
 	{ok, NewState}.
 
 handle_call({send, Address, Port, Message}, _From, State) ->
@@ -117,6 +147,12 @@ handle_call({get_local_address_port}, _From, State)	->
 
 handle_call({set_local_address, Ip, Port}, _From, State) ->
 	handle_set_local_address(Ip, Port, State);
+
+handle_call({get_my_pid}, _From, State) ->
+	handle_get_local_pid(State);
+	
+handle_call({all_nodes}, _From, State) ->
+	handle_get_all_nodes(State);
 	
 handle_call(Request, _From, State) ->
 	io:format("Received request ~p in talk_router~n", [Request]),
@@ -237,6 +273,11 @@ handle_get_local_address_port(State) ->
 	LocalPort = State#node.port,
 	{reply, {LocalAddress, LocalPort}, State}.
 
+handle_get_local_pid(State) ->
+	io:format("State looks like: ~p~n", [State]),
+	LocalPid = State#node.pid,
+	{reply, {LocalPid}, State}.
+
 handle_set_local_address(Ip, Port, State) ->
 	NewState = State#node{address = Ip, port = Port},
 	{ok, NewState}.
@@ -245,19 +286,30 @@ handle_init_and_start_acceptor() ->
 	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
 	NewState = case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
 		{connection, Pid, Socket} -> 
+			io:format("Got pid (~p) and (~p)~n", [Pid, Socket]),
 			pg2:join(?SERVER, Pid),
-			update_state_node(LocalIP, LocalPort, Pid, Socket, {});
+			new_state_node(LocalIP, LocalPort, Pid, Socket, {});
 		_Else -> 
-			#state{}
+			#state{node=undefined}
 	end,	
 	io:format("Finished init([]) with ~p~n", [NewState]),
 	NewState.
+
+handle_get_all_nodes(State) ->
+	MyNode = get_state_node(State),
+	RemoteNodes = ?DB:select_all(node),
+	AllNodes = [MyNode|RemoteNodes],
+	{reply, AllNodes, State}.
+
+get_state_node(State) ->
+	State#node{}.
 
 my_ip() ->
     {ok, Hostname} = inet:gethostname(),
     {ok, HostEntry} = inet:gethostbyname(Hostname),
     erlang:hd(HostEntry#hostent.h_addr_list).
 
-update_state_node(Address, Port, Pid, Socket, Tuple) ->
-	NewNode = #node{address=Address,port=Port,pid=Pid,socket=Socket,tuple=Tuple},
+new_state_node(Address, Port, Pid, Socket, Tuple) ->
+	BaseNode = #node{key={Address, Port}},
+	NewNode = BaseNode#node{address=Address,port=Port,pid=Pid,socket=Socket,tuple=Tuple},
 	#state{node=NewNode}.

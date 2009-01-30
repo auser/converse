@@ -17,12 +17,20 @@ add(Address, Port, Info) ->
 remove(Address, Port) ->
 	talker_router:unregister_connection(Address, Port).
 
+find(Address, Port) ->
+	talker_router:find_node(Address, Port).
+
 clear() ->
 	talker_db:delete_all(node).
 
-this() ->
-    here(self()).
+remote() ->
+	talker_router:all_connections().
 
-here(Pid) ->
-    {LocalIP, LocalPort} = talker_router:get_local_address_port(),
-    {LocalIP, LocalPort, Pid}.
+all() ->
+	talker_router:all().
+	
+all_pids() ->
+	talker_router:all_pids().
+
+self() ->
+	talker_router:local_pid().

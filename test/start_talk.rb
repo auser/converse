@@ -2,7 +2,7 @@ require "rubygems"
 require "skelerl"
 
 erlang do
-  # testing true
+  testing true
   
   options :path => "./ebin"
   

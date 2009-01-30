@@ -2,15 +2,15 @@
 
 -behaviour(supervisor).
 
--export([start_in_shell_for_testing/0, start_link/1, init/1]).
+-export([start_in_shell_for_testing/0, start_link/0, init/1]).
 
 start_in_shell_for_testing() ->
 	{ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, _Arg = []),
 	unlink(Pid).
 
-start_link(Args) ->
+start_link() ->
 	spawn(fun() ->
-			supervisor:start_link({local, ?MODULE}, ?MODULE, Args)
+			supervisor:start_link({local, ?MODULE}, ?MODULE, _Args = [])
 		end).
 
 init([]) ->
