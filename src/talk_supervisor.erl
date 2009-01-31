@@ -1,4 +1,5 @@
--module (talker_supervisor).
+-module (talk_supervisor).
+-include("talker.hrl").
 
 -behaviour(supervisor).
 
@@ -18,6 +19,7 @@ init([]) ->
 	MaxRestarts = 1000,
 	MaxTimeBetRestarts = 3600,
 	TimeoutTime = 5000,
+	Port = ?DEFAULT_PORT,
 	
 	SupFlags = {RestartStrategy, MaxRestarts, MaxTimeBetRestarts},
 	
@@ -28,7 +30,14 @@ init([]) ->
 		worker, 
 		[talker_router]},
 
-    LoadServers = [TalkRouter],
+    TalkAcceptor = {talk_listener, 
+		{talk_listener, start_link, [Port]}, 
+		permanent,
+		TimeoutTime,
+		worker, 
+		[]},
+
+    LoadServers = [TalkRouter,TalkAcceptor],
 
 	{ok, {SupFlags, LoadServers}}.
     

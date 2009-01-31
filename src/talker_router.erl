@@ -20,7 +20,7 @@
 			all_pids/0, local_pid/0,
 			send_to_all/1,
 			find_node/2,
-			all_nodes/0,
+			all_nodes/0, my_ip/0,
 			all/0
 		]).
 		
@@ -59,9 +59,10 @@ all_connections() ->
 	handle_get_all_connections().
 
 register_connection(Address, Port, Info) ->
-	% Pid, Socket
 	MyIp = my_ip(),
 	case talker_connection:open_new_connection_to(Address, Port, MyIp, ?DEFAULT_PORT) of
+		{local_connection, LocalIp, LocalPort, _LocalSocket} ->
+			gen_server:call(?SERVER, {set_local_address, LocalIp, LocalPort}, ?TIMEOUT);
 		{connection, Pid, Socket} ->
 			gen_server:call(?SERVER, {register_connection, Address, Port, Pid, Socket, Info}, ?TIMEOUT);
 		Else ->
@@ -79,30 +80,46 @@ testing_unregister_connection(Address, Port) ->
 	gen_server:call(?SERVER, {unregister_connection, Address, Port}, ?TIMEOUT).
 
 get_local_address_port() ->
-	gen_server:call(?SERVER, {get_local_address_port}, ?TIMEOUT).
+	case ?DB:lookup(local_node) of
+		[{local_node, Node}] ->
+			{Node#node.address, Node#node.port};
+		[] ->
+			undefined
+	end.
 	
 set_local_address(Ip, Port) ->
 	gen_server:call(?SERVER, {set_local_address, Ip, Port}, ?TIMEOUT).
-	
-local_pid() ->
-	gen_server:call(?SERVER, {get_my_pid}, ?TIMEOUT).
 
 all() ->
+	all_nodes().
+
+all_nodes() ->
+	?DB:select_all(node).
+
+all_pids() ->
 	AllNodes = all_nodes(),
 	[X#node.pid || X <-AllNodes].
 
-all_nodes() ->
-	gen_server:call(?SERVER, {all_nodes}, ?TIMEOUT).
-
-all_pids() ->
-	pg2:get_members(?SERVER).
-
 find_node(Address, Port) ->
+	% io:format("DB:find_node(~p, ~p) = ~p~n", [Address, Port, ?DB:find_node(Address, Port)]),
 	case ?DB:find_node(Address, Port) of
-		[{{Address, Port}, Node}] -> Node;
-		_ ->
-			unknown
+		{{Address, Port}, Node} ->
+			{remote_node, Node};
+		[] ->
+			local_node()
 	end.
+
+local_node() ->
+	case ?DB:find_by_key({local_node}) of
+		[{local_node}, Node] ->
+			{local_node, Node};
+		Found ->
+			Found
+	end.
+	
+local_pid() ->
+	LocalNode = local_node(),
+	LocalNode#node.pid.
 
 %%====================================================================
 %% gen_server callbacks
@@ -128,31 +145,23 @@ init([]) ->
 	% Start the database
 	talker_db:start(),
 	% Start the local connection to self()
-	pg2:start_link(), pg2:create(?SERVER),
-	NewState = handle_init_and_start_acceptor(),
-	% io:format("State is record: ~p~n", [erlang:is_record(state, NewState)]),
-	{ok, NewState}.
+	pg2:start_link(), 
+	pg2:create(?SERVER),
+	Row = #node{key={local_node}, port=?DEFAULT_PORT, address=undefined},
+	talker_db:insert(Row),
+	{ok, ok}.
 
 handle_call({send, Address, Port, Message}, _From, State) ->
 	handle_forward_message(Address, Port, Message, State);
-	
+
 handle_call({register_connection, Address, Port, Pid, Socket, Tuple}, _From, State) ->
 	handle_register_connection(Address, Port, Pid, Socket, Tuple, State);
 
 handle_call({unregister_connection, Address, Port}, _From, State) ->
 	handle_unregister_connection(Address, Port, State);
 
-handle_call({get_local_address_port}, _From, State)	->
-	handle_get_local_address_port(State);
-
 handle_call({set_local_address, Ip, Port}, _From, State) ->
 	handle_set_local_address(Ip, Port, State);
-
-handle_call({get_my_pid}, _From, State) ->
-	handle_get_local_pid(State);
-	
-handle_call({all_nodes}, _From, State) ->
-	handle_get_all_nodes(State);
 	
 handle_call(Request, _From, State) ->
 	io:format("Received request ~p in talk_router~n", [Request]),
@@ -177,16 +186,14 @@ handle_cast(_Msg, State) ->
 handle_info({'EXIT', _Pid, normal}, State) ->
 	{noreply, State};
 
-handle_info({'EXIT', Pid, _Abnormal}, State) ->
-	timer:sleep(?TIMEOUT),
-	Ip = my_ip(), Port = ?DEFAULT_PORT,
-	case talker_acceptor:start_acceptor(Port, Ip, self()) of
-		{connection, Pid, Socket} ->
-			NewState = #node{address = Ip, port = Port, pid = Pid, socket = Socket},
-		    {noreply, NewState};
-		_Else ->
-			{noreply, State}
-	end;	
+handle_info({'EXIT', Pid, Abnormal}, State) ->
+	io:format("Received EXIT: ~p from ~p~n", [Abnormal, Pid]),
+	% timer:sleep(?TIMEOUT),
+	CurrNode = State#state.node,
+	pg2:join(?SERVER, CurrNode#node.pid),
+	NewState = #state{node=CurrNode},
+	io:format("Finished init([~p])~n", [NewState]),	
+	{noreply, NewState};
 	
 handle_info(Info, State) ->
 	io:format("Info: ~p~n", [Info]),
@@ -215,26 +222,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%------
 handle_register_connection(Address, Port, Pid, Socket, Tuple, State) ->
 	io:format("In handle_register_connection: ~p:~p~n", [Address, Port]),
-	case ?DB:find_node(Address, Port) of
-		[{{Address, Port}, _}] ->
+	case find_node(Address, Port) of
+		{remote_node, _Node} ->
 			io:format("Already registered ~p~n", [Address]),
 			{reply, dups, State};
+		{local_node, _Node} ->
+			io:format("Found local_node~n"),
+			{reply, local_node, State};
 		[] ->			
-			{MyAddress, MyPort} = {my_ip(), ?DEFAULT_PORT},
-			case Address =:= MyAddress andalso Port =:= MyPort of
-				true ->
-					{reply, self, State};
-				_ ->
-					?DB:insert_node(Address, Port, Pid, Socket, Tuple),
-					pg2:join(?SERVER, Pid),
-					{reply, ok, State}
-			end
+			?DB:insert_node(Address, Port, Pid, Socket, Tuple),
+			pg2:join(?SERVER, Pid),
+			{reply, ok, State}
 	end.
 	
-handle_unregister_connection(Add, P, State) ->
-	Reply = case ?DB:find_node(Add, P) of
-
-		[{{_FAddress, _FPort}, {address=Address, port=Port, pid=Pid}}] ->
+handle_unregister_connection(Address, Port, State) ->
+	Reply = case find_node(Address, Port) of
+		{_, Node} ->
+			Pid = Node#node.pid,
 			?DB:delete_node(Address, Port),
 			pg2:leave(?SERVER, Pid),
 			ok;
@@ -244,72 +248,61 @@ handle_unregister_connection(Add, P, State) ->
 	{reply, Reply, State}.
 
 handle_forward_message(Address, Port, Message, State) ->
-	{MyAddress, MyPort} = get_local_address_port(),
-	io:format("~p =:= ~p andalso ~p =:= ~p~n", [Address, MyAddress, Port, MyPort]),
-	case (Address =:= MyAddress andalso Port =:= MyPort) of
-		true -> self() ! Message;
-		_ ->
+	case find_node(Address, Port) of
+		{local_node, Node} ->
+			io:format("Sending ~p to local node~n", [Message]),
+			talker_connection:send(Node, Message);
+		{remote_node, _Node} -> 
+			handle_remote_forward_message(Address, Port, Message, State);
+		unknown_node ->
 			handle_remote_forward_message(Address, Port, Message, State)
 	end.
 	
 handle_remote_forward_message(Address, Port, Message, State) ->
-	case ?DB:find_node(Address, Port) of
-		[{{Address, Port}, Node}] ->
-			talker_connection:send(Node, Message),
+	{CurrAddr,CurrPort} = get_local_address_port(),
+	case talker_connection:open_new_connection_to(Address, Port, CurrAddr, CurrPort) of
+		{local_connection, LocalIp, LocalPort, LocalSocket} ->
+			CustNode = #node{key={local_node}, address=LocalIp, port=LocalPort, socket=LocalSocket},
+			talker_connection:send(CustNode, Message),
+			talker_db:insert(CustNode),
 			{reply, ok, State};
-		[] ->
-			{reply, unknown_node, State};
-		Unknown ->
-			io:format("Unknown response to handle_remote_forward_message: ~p~n", [Unknown]),
-			{reply, ok, State}
+		fail ->
+			{reply, ok, State};
+		{connection, _Pid, Socket} ->
+			CustNode = #node{address=Address, port=Port, socket=Socket},
+			talker_connection:send(CustNode, Message),
+			register_connection(Address, Port, {}),
+			{reply, ok, State}				
 	end.
-
 
 handle_get_all_connections() ->
 	?DB:select_all(node).
+	
+handle_set_local_address(Address, Port, State) ->
+	Row = #node{key={local_node}, port=Port, address=Address},
+	talker_db:insert(Row),
+	{reply, ok, State}.
 
-handle_get_local_address_port(State) ->
-	LocalAddress = State#node.address,
-	LocalPort = State#node.port,
-	{reply, {LocalAddress, LocalPort}, State}.
-
-handle_get_local_pid(State) ->
-	io:format("State looks like: ~p~n", [State]),
-	LocalPid = State#node.pid,
-	{reply, {LocalPid}, State}.
-
-handle_set_local_address(Ip, Port, State) ->
-	NewState = State#node{address = Ip, port = Port},
-	{ok, NewState}.
-
-handle_init_and_start_acceptor() ->	
-	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
-	NewState = case talker_acceptor:start_acceptor(LocalPort, LocalIP) of
-		{connection, Pid, Socket} -> 
-			io:format("Got pid (~p) and (~p)~n", [Pid, Socket]),
-			pg2:join(?SERVER, Pid),
-			new_state_node(LocalIP, LocalPort, Pid, Socket, {});
-		_Else -> 
-			#state{node=undefined}
-	end,	
-	io:format("Finished init([]) with ~p~n", [NewState]),
-	NewState.
-
-handle_get_all_nodes(State) ->
-	MyNode = get_state_node(State),
-	RemoteNodes = ?DB:select_all(node),
-	AllNodes = [MyNode|RemoteNodes],
-	{reply, AllNodes, State}.
-
-get_state_node(State) ->
-	State#node{}.
+% handle_init_and_start_acceptor(State) ->	
+% 	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
+% 	io:format("in handle_init_and_start_acceptor with ~p~n", [LocalIP]),
+% 	NewState = case talk_listener:start_acceptor(LocalPort, LocalIP, self()) of
+% 		{connection, Pid, Socket} -> 			
+% 			new_state_node(LocalIP, LocalPort, Pid, Socket, {});
+% 		_Else ->
+% 			CurrNode = State#state.node,
+% 			pg2:join(?SERVER, CurrNode#node.pid),
+% 			State
+% 	end,
+% 	io:format("Finished init([~p])~n", [NewState]),
+% 	NewState.
 
 my_ip() ->
     {ok, Hostname} = inet:gethostname(),
     {ok, HostEntry} = inet:gethostbyname(Hostname),
     erlang:hd(HostEntry#hostent.h_addr_list).
 
-new_state_node(Address, Port, Pid, Socket, Tuple) ->
-	BaseNode = #node{key={Address, Port}},
-	NewNode = BaseNode#node{address=Address,port=Port,pid=Pid,socket=Socket,tuple=Tuple},
-	#state{node=NewNode}.
+% new_state_node(Address, Port, Pid, Socket, Tuple) ->
+% 	BaseNode = #node{key={Address, Port}},
+% 	NewNode = BaseNode#node{address=Address,port=Port,pid=Pid,socket=Socket,tuple=Tuple},
+% 	#state{node=NewNode}.

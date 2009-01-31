@@ -23,7 +23,10 @@ lookup(Key) ->
 
 find_node(Address, Port) ->
 	do(qlc:q([X || X <-mnesia:table(node), X#node.key =:= {Address, Port} ])).
-	
+
+find_by_key(Key) ->
+	do(qlc:q([X || X <-mnesia:table(node), X#node.key =:= Key ])).
+
 insert_node(Address, Port, Pid, Socket, Tuple) ->
 	Row = #node{key={Address, Port}, address=Address, port=Port, pid=Pid, socket=Socket, tuple=Tuple},
 	io:format("Node row: ~p~n", [Row]),
@@ -43,8 +46,7 @@ select_all(Tab) ->
 	do(qlc:q([X || X <- mnesia:table(Tab)])).
 
 delete_all(Tab) ->
-	AllKeys = do(qlc:q([X#node.key || X <- mnesia:table(Tab)])),
-	[delete(K) || K <- AllKeys].
+	mnesia:clear_table(Tab).
 
 do(Q) ->
     F = fun() -> qlc:e(Q) end,
