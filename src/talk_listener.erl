@@ -15,7 +15,7 @@ start_link(Port) ->
 init(Port, Super) ->
 	ListeningSocket = open_port_for_listening(Port, talker_router:my_ip()),
 	{ok, {Ip, _}} = inet:sockname(ListeningSocket),
-	% talker_router:set_local_address(Ip, Port),
+	talker_router:set_local_address(Ip, Port),
 	Super ! {started},
 	server(ListeningSocket).
 

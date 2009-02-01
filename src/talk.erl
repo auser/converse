@@ -27,7 +27,10 @@ remote() ->
 	talker_router:all_connections().
 
 all() ->
-	talker_router:all().
+	all(undefined).
+	
+all(Type) ->
+	talker_router:all(Type).
 	
 all_pids() ->
 	talker_router:all_pids().

@@ -21,7 +21,7 @@
 			send_to_all/1,
 			find_node/2,
 			all_nodes/0, my_ip/0,
-			all/0
+			all/0, all/1
 		]).
 		
 -export ([	testing_register_connection/5,
@@ -91,7 +91,15 @@ set_local_address(Ip, Port) ->
 	gen_server:call(?SERVER, {set_local_address, Ip, Port}, ?TIMEOUT).
 
 all() ->
-	all_nodes().
+	all(undefined).
+
+all(Type) ->
+	case Type of
+		nodes -> all_nodes();
+		pids -> all_pids();
+		ips -> all_ips();
+		undefined -> all_nodes()
+	end.
 
 all_nodes() ->
 	?DB:select_all(node).
@@ -99,6 +107,10 @@ all_nodes() ->
 all_pids() ->
 	AllNodes = all_nodes(),
 	[X#node.pid || X <-AllNodes].
+	
+all_ips() ->
+	AllNodes = all_nodes(),
+	[X#node.address || X <-AllNodes].
 
 find_node(Address, Port) ->
 	% io:format("DB:find_node(~p, ~p) = ~p~n", [Address, Port, ?DB:find_node(Address, Port)]),
@@ -113,8 +125,8 @@ local_node() ->
 	case ?DB:find_by_key({local_node}) of
 		[{local_node}, Node] ->
 			{local_node, Node};
-		Found ->
-			Found
+		_Found ->
+			not_found
 	end.
 	
 local_pid() ->
