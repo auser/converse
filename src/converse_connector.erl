@@ -27,7 +27,7 @@ send({Address, Port}, Message) ->
 %% Description: Starts the server
 %%--------------------------------------------------------------------
 start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%====================================================================
 %% gen_server callbacks
@@ -41,6 +41,7 @@ start_link() ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([]) ->
+	process_flag(trap_exit, true),
 	{ok, ok}.
 
 %%--------------------------------------------------------------------
@@ -53,8 +54,9 @@ init([]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 handle_call({deliver, Address, Port, Message}, _From, State) ->
-	handle_deliver_message({Address, Port}, Message),
-	{reply, ok, State};
+	?TRACE("Delivering message ~p~n", [Message]),
+	Reply = handle_deliver_message({Address, Port}, Message),
+	{reply, Reply, State};
 	
 handle_call(_Request, _From, State) ->
   Reply = ok,
@@ -75,8 +77,20 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info(_Info, State) ->
-  {noreply, State}.
+handle_info({'EXIT', _Pid, normal}, State) ->
+	{noreply, State};
+
+handle_info({'EXIT', Pid, Abnormal}, State) ->
+	?TRACE("Received EXIT: ~p from ~p~n", [Abnormal, Pid]),
+	{noreply, State};
+
+handle_info({'DOWN', _Ref, process, WatchedPid, Reason}, State) ->
+	?TRACE("Received DOWN message", [Reason, WatchedPid]),
+	{noreply, State};
+	
+handle_info(Info, State) ->
+	?TRACE("Received message~n", [Info]),
+	{noreply, State}.
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
@@ -114,28 +128,23 @@ handle_deliver_message({Address, Port}, Message) ->
 	end.
 
 new_connection(Address, Port) ->
+	new_connection_with_retry(Address, Port, ?TIMES_TO_RETRY).
+
+new_connection_with_retry(_Address, _Port, 0) ->
+	fail;
+	
+new_connection_with_retry(Address, Port, RetriesLeft) ->
     case gen_tcp:connect(Address, Port, ?PACKET_SETUP, ?TIMEOUT) of
         {ok, Socket} ->
 			Socket;
 		{error, Reason} ->
-		    io:format("reconnect to ~p because socket is ~p~n", [Address, Reason]),
-            case new_connection_retry(Address, Port, ?TIMES_TO_RETRY) of
+		    ?TRACE("reconnect to ~p because socket is ~p~n", [Address, Reason]),
+			MoreRetries = RetriesLeft - 1,
+            case new_connection_with_retry(Address, Port, MoreRetries) of
 				fail ->
-					io:format("Error creating connection to ~p:~p~n", [Address, Port]),
+					?TRACE("Error creating connection to ~p:~p~n", [Address, Port]),
 					fail;
 				Socket ->
 					Socket
 			end
     end.
-
-new_connection_retry(_Address, _Port, 0) ->
-	fail;
-	
-new_connection_retry(Address, Port, Num) ->
-	case new_connection(Address, Port) of
-		fail ->
-			NewNum = Num - 1,
-			new_connection_retry(Address, Port, NewNum);
-		Socket ->
-			Socket
-	end.

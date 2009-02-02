@@ -3,75 +3,78 @@
 
 -export ([start_link/2, init/3]).
 
-start_link(Port, Starter) ->
-	Pid = proc_lib:spawn_link(?MODULE, init, [Port, self(), Starter]),
+start_link(Port, StarterName) ->
+	Pid = proc_lib:spawn_link(?MODULE, init, [Port, self(), StarterName]),
 	receive
-		{started, _ListeningPort} ->
+		{started} ->
 			{ok, Pid};
 		{error, Error} ->
-			io:format("Error in start_link ~p~n", [Error]),
-			ok
+			?TRACE("Error in start_link ~p~n", [Error]),
+			fail
 	end.
 	
-init(Port, Supervisor, Starter) ->
+init(Port, Supervisor, StarterName) ->	
+	process_flag(trap_exit, true),
 	% Open a socket for listening on the port at the first available Ip address
-	IntegerPort = case erlang:is_atom(Port) of
-		true -> 
-			erlang:list_to_integer(erlang:atom_to_list(Port));
-		false -> 
-			Port
-	end,
+	IntegerPort = utils:safe_integer(Port),
 	Socket = open_port_for_listening(IntegerPort),
 	% notify self that we've started so we can move on from start_link
-	{ok, ListeningPort} = inet:port(Socket),
-	Supervisor ! {started, ListeningPort},
+	Supervisor ! {started},
 	% Start the server process
-	server(Socket, Starter).
+	?TRACE("Starting the server process~n", []),	
+	server(Socket, StarterName).
 
 % Just start the server with the starter to be notified
-server(LS, Starter) ->
+server(LS, StarterName) ->
 	% Accept connections on the listening socket
     case gen_tcp:accept(LS) of
 	% If the socket is ready to listen
 	{ok, Socket} ->
+		?TRACE("Starting server", [StarterName]),
 		% then spawn a server to listen to it, maintaining the same starter pid
 		% spawn(fun() -> 
-			listen_loop(Socket, Starter),
+			listen_loop(Socket, StarterName),
 			% end),
-	    server(LS, Starter);
+	    server(LS, StarterName);
+	{error, closed} ->
+		?TRACE("Socket closed...~n", []);
 	Other ->
 		% otherwise, wha huh?
-		io:format("Unknown message: ~p~n", [Other]),
-		server(LS, Starter)
+		?TRACE("Unknown message: ~p~n", [Other])
     end.
 
-listen_loop(LS, Starter) ->
+listen_loop(LS, StarterName) ->
 	inet:setopts(LS, [{active, once}]),
 	receive
 		{tcp, Socket, Data} ->
 			case binary_to_term(Data) of
 				{deliver, Message} ->					
-					Response = handle_deliver_message(Message, Starter),
-					io:format("Received message ~p -> ~p (to ~p)~n", [Message, Response, Starter]),
-					listen_loop(Socket, Starter);
+					StarterPid = utils:live_process_named(StarterName),
+					Response = handle_received_message(Message, StarterPid),
+					?TRACE("Received message~n", [Message, Response, StarterName]),
+					listen_loop(Socket, StarterName);
 				{server, _Address, _Port} ->
-					io:format("Received notification that I'll be receiving stuff~n"),
-					listen_loop(Socket, Starter);
+					?TRACE("Received notification that I'll be receiving stuff~n", []),
+					listen_loop(Socket, StarterName);
 				{remote, _Address, _Port} ->
-					io:format("Received notification that I'll be receiving stuff from remote~n"),
-					listen_loop(Socket, Starter);
+					?TRACE("Received notification that I'll be receiving stuff from remote~n", []),
+					listen_loop(Socket, StarterName);
 				{close} ->
 					gen_tcp:close(Socket);
 				Other ->
-					io:format("Received ~p message from accept~n", [Other]),
-					listen_loop(Socket, Starter)
+					?TRACE("Received ~p message from accept~n", [Other]),
+					listen_loop(Socket, StarterName)
 			end;
 		{tcp_closed,S} ->
-			io:format("Socket ~w closed [~w]~n",[S,self()]),
+			?TRACE("Socket ~w closed [~w]~n",[S,self()]),
             ok;
+		{'EXIT', _From, normal} ->
+			?TRACE("Received normal EXIT~n", []);
+		{'EXIT', _From, Reason} ->
+			?TRACE("Received EXIT because ~p~n", [Reason]);
 		Other ->
-			io:format("Received ~p~n", [Other]),
-			listen_loop(LS, Starter)
+			?TRACE("Unknown message received", [Other]),
+			listen_loop(LS, StarterName)
 	end.
 
 open_port_for_listening(Port) ->
@@ -80,14 +83,9 @@ open_port_for_listening(Port) ->
 	{ok, Socket} ->
 	    Socket;
 	Else ->
-	    io:format("Error: can't listen on ~p: ~p~n", [Port, Else]),
+	    ?TRACE("Error: can't listen on ~p: ~p~n", [Port, Else]),
 		{stop, Else}
     end.
 
-% first_available_ip() ->
-%     {ok, Hostname} = inet:gethostname(),
-%     {ok, HostEntry} = inet:gethostbyname(Hostname),
-%     erlang:hd(HostEntry#hostent.h_addr_list).
-
-handle_deliver_message(Message, Starter) ->
-	Starter ! Message.
+handle_received_message(Message, StarterPid) ->
+	StarterPid ! Message.

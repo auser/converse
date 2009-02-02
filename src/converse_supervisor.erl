@@ -15,14 +15,14 @@ start_link(Port, Starter) ->
 		end).
 
 init([Port, Starter]) ->
-	RestartStrategy = one_for_one,
+	RestartStrategy = one_for_all,
 	MaxRestarts = 1000,
 	MaxTimeBetRestarts = 3600,
 	TimeoutTime = 5000,
 	
 	SupFlags = {RestartStrategy, MaxRestarts, MaxTimeBetRestarts},
 	
-    TcpListener = {converse_tcp_listener, 
+	TcpListener = {converse_tcp_listener, 
 		{converse_tcp_listener, start_link, [Port, Starter]}, 
 		permanent, 
 		TimeoutTime, 
@@ -36,7 +36,7 @@ init([Port, Starter]) ->
 		worker, 
 		[converse_connector]},
 
-    LoadServers = [TcpListener,Connector],
+    LoadServers = [TcpListener, Connector],
 
 	{ok, {SupFlags, LoadServers}}.
     
