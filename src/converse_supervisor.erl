@@ -3,41 +3,40 @@
 
 -behaviour(supervisor).
 
--export([start_in_shell_for_testing/0, start_link/0, init/1]).
+-export([start_in_shell_for_testing/2, start_link/2, init/1]).
 
-start_in_shell_for_testing() ->
-	{ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, _Arg = []),
+start_in_shell_for_testing(Port, Starter) ->
+	{ok, Pid} = supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, Starter]),
 	unlink(Pid).
 
-start_link() ->
+start_link(Port, Starter) ->
 	spawn(fun() ->
-			supervisor:start_link({local, ?MODULE}, ?MODULE, _Args = [])
+			supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, Starter])
 		end).
 
-init([]) ->
+init([Port, Starter]) ->
 	RestartStrategy = one_for_one,
 	MaxRestarts = 1000,
 	MaxTimeBetRestarts = 3600,
 	TimeoutTime = 5000,
-	Port = ?DEFAULT_PORT,
 	
 	SupFlags = {RestartStrategy, MaxRestarts, MaxTimeBetRestarts},
 	
-    TalkRouter = {converse_router, 
-		{converse_router, start_link, []}, 
+    TcpListener = {converse_tcp_listener, 
+		{converse_tcp_listener, start_link, [Port, Starter]}, 
 		permanent, 
 		TimeoutTime, 
 		worker, 
-		[converse_router]},
+		[converse_tcp_listener]},
 
-    TalkAcceptor = {converse_listener, 
-		{converse_listener, start_link, [Port]}, 
+    Connector = {converse_connector, 
+		{converse_connector, start_link, []}, 
 		permanent,
 		TimeoutTime,
 		worker, 
-		[]},
+		[converse_connector]},
 
-    LoadServers = [TalkRouter,TalkAcceptor],
+    LoadServers = [TcpListener,Connector],
 
 	{ok, {SupFlags, LoadServers}}.
     

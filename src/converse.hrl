@@ -2,12 +2,7 @@
 
 -define (NAMESPACE, ?MODULE).
 -define (TIMEOUT, 20000).
--define (DEFAULT_PORT, 5001).
--define (DB, converse_db).
-
--define (DATABASES, [node]).
+-define (DEFAULT_PORT, 5002).
+-define (TIMES_TO_RETRY, 3).
 
 -define (PACKET_SETUP, [binary, {packet, 4}, {nodelay, true}, {active, once}, {send_timeout, 60000}]).
-
-% Records
--record (node, {key, address, port, pid, socket, tuple}).

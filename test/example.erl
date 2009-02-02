@@ -1,9 +1,7 @@
-% converse_router
-converse_router:start_link().
-converse_router:get_all_connections().
-converse_router:register_connection({0,0,0,1}, 5001, {name, "fred"}).
-converse_router:get_all_connections().
+% Start it up!
+erl -pa ./ebin -sname node0
+converse_supervisor:start_in_shell_for_testing( 5001, self() ).
 
-% converse
-converse:start_link().
-converse:send({{10,47,90,162}, 5001}, {hi}).
+% Sending a message
+converse:send({{10,211,55,2}, 5001}, {hi}).
+converse:send({{10,211,55,2}, 5001}, {deliver, "hi"}).
