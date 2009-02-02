@@ -3,7 +3,7 @@
 -define (NAMESPACE, ?MODULE).
 -define (TIMEOUT, 20000).
 -define (DEFAULT_PORT, 5001).
--define (DB, talker_db).
+-define (DB, converse_db).
 
 -define (DATABASES, [node]).
 

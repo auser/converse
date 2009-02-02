@@ -2,11 +2,11 @@
 % This handles the connection creation and connection
 %%%%%
 
--module (talker_connection).
+-module (converse_connection).
 
 -export([send/2, open_new_connection_to/4, new/3]).
 
--include("talker.hrl").
+-include("converse.hrl").
 
 new(Address, Port, Socket) -> 
 	spawn(fun() -> loop(Socket, Address, Port) end).
@@ -48,16 +48,16 @@ send(Node, Message) ->
 			io:format("Sent message ~p~n", [Message]),
 			ok;
 		{error, closed} ->
-			talker_router:unregister_connection(Address, Port),
+			converse_router:unregister_connection(Address, Port),
 			gen_tcp:close(Socket);
 		{error, Reason} ->
 			io:format("Error: ~p:~p ~p~n", [Address, Port, Reason]),
-			talker_router:unregister_connection(Address, Port),
+			converse_router:unregister_connection(Address, Port),
 			gen_tcp:close(Socket)
 	end.
 
 loop(fail, Address, Port) ->
-	talker_router:unregister_connection(Address, Port),
+	converse_router:unregister_connection(Address, Port),
 	ok;
 
 loop(Socket, Address, Port) ->
@@ -71,7 +71,7 @@ loop(Socket, Address, Port) ->
 			end;
 		{tcp_closed, Socket} ->
 			% remove the connection if the tcp socket has closed
-			talker_router:unregister_connection(Address, Port),
+			converse_router:unregister_connection(Address, Port),
 			gen_tcp:close(Socket);
 		% if we have received a tcp message
 		{tcp, Socket, Data} ->
@@ -81,7 +81,7 @@ loop(Socket, Address, Port) ->
 					inet:setopts(Socket, [{active, once}]),
 					loop(Socket, Address, Port);
 				{user_close} ->
-					talker_router:unregister_connection(Address, Port),
+					converse_router:unregister_connection(Address, Port),
 					gen_tcp:close(Socket);
 				Unknown ->
 					io:trace("Unknown message: ~p~n", [Unknown]),

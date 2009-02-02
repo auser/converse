@@ -3,9 +3,9 @@
 % registering connections, removing connections
 %%%%%
 
--module (talker_router).
+-module (converse_router).
 -author ("Ari Lerner").
--include("talker.hrl").
+-include("converse.hrl").
 
 -behaviour(gen_server).
 
@@ -46,7 +46,7 @@ send({Address, Port}, Message) ->
 		[{{Address, Port}, Node}] -> 
 			io:format("Node at ~p:~p known at ~p~n", [Address, Port, Node]),
 			Pid = Node#node.pid, Address = Node#node.address,
-			talker_connection:send(Address, Pid, Message), ok;
+			converse_connection:send(Address, Pid, Message), ok;
 		[] ->			
 			gen_server:call(?MODULE, {send, Address, Port, Message}, ?TIMEOUT)
 	end.
@@ -60,7 +60,7 @@ all_connections() ->
 
 register_connection(Address, Port, Info) ->
 	MyIp = my_ip(),
-	case talker_connection:open_new_connection_to(Address, Port, MyIp, ?DEFAULT_PORT) of
+	case converse_connection:open_new_connection_to(Address, Port, MyIp, ?DEFAULT_PORT) of
 		{local_connection, LocalIp, LocalPort, _LocalSocket} ->
 			gen_server:call(?SERVER, {set_local_address, LocalIp, LocalPort}, ?TIMEOUT);
 		{connection, Pid, Socket} ->
@@ -155,12 +155,12 @@ start_link() ->
 init([]) ->	
 	process_flag(trap_exit, true),
 	% Start the database
-	talker_db:start(),
+	converse_db:start(),
 	% Start the local connection to self()
 	pg2:start_link(), 
 	pg2:create(?SERVER),
 	Row = #node{key={local_node}, port=?DEFAULT_PORT, address=undefined},
-	talker_db:insert(Row),
+	converse_db:insert(Row),
 	{ok, ok}.
 
 handle_call({send, Address, Port, Message}, _From, State) ->
@@ -176,7 +176,7 @@ handle_call({set_local_address, Ip, Port}, _From, State) ->
 	handle_set_local_address(Ip, Port, State);
 	
 handle_call(Request, _From, State) ->
-	io:format("Received request ~p in talk_router~n", [Request]),
+	io:format("Received request ~p in converse_router~n", [Request]),
     Reply = ok,
     {reply, Reply, State}.
 
@@ -263,7 +263,7 @@ handle_forward_message(Address, Port, Message, State) ->
 	case find_node(Address, Port) of
 		{local_node, Node} ->
 			io:format("Sending ~p to local node~n", [Message]),
-			talker_connection:send(Node, Message);
+			converse_connection:send(Node, Message);
 		{remote_node, _Node} -> 
 			handle_remote_forward_message(Address, Port, Message, State);
 		unknown_node ->
@@ -272,17 +272,17 @@ handle_forward_message(Address, Port, Message, State) ->
 	
 handle_remote_forward_message(Address, Port, Message, State) ->
 	{CurrAddr,CurrPort} = get_local_address_port(),
-	case talker_connection:open_new_connection_to(Address, Port, CurrAddr, CurrPort) of
+	case converse_connection:open_new_connection_to(Address, Port, CurrAddr, CurrPort) of
 		{local_connection, LocalIp, LocalPort, LocalSocket} ->
 			CustNode = #node{key={local_node}, address=LocalIp, port=LocalPort, socket=LocalSocket},
-			talker_connection:send(CustNode, Message),
-			talker_db:insert(CustNode),
+			converse_connection:send(CustNode, Message),
+			converse_db:insert(CustNode),
 			{reply, ok, State};
 		fail ->
 			{reply, ok, State};
 		{connection, _Pid, Socket} ->
 			CustNode = #node{address=Address, port=Port, socket=Socket},
-			talker_connection:send(CustNode, Message),
+			converse_connection:send(CustNode, Message),
 			register_connection(Address, Port, {}),
 			{reply, ok, State}				
 	end.
@@ -292,13 +292,13 @@ handle_get_all_connections() ->
 	
 handle_set_local_address(Address, Port, State) ->
 	Row = #node{key={local_node}, port=Port, address=Address},
-	talker_db:insert(Row),
+	converse_db:insert(Row),
 	{reply, ok, State}.
 
 % handle_init_and_start_acceptor(State) ->	
 % 	LocalIP = my_ip(), LocalPort = ?DEFAULT_PORT,
 % 	io:format("in handle_init_and_start_acceptor with ~p~n", [LocalIP]),
-% 	NewState = case talk_listener:start_acceptor(LocalPort, LocalIP, self()) of
+% 	NewState = case converse_listener:start_acceptor(LocalPort, LocalIP, self()) of
 % 		{connection, Pid, Socket} -> 			
 % 			new_state_node(LocalIP, LocalPort, Pid, Socket, {});
 % 		_Else ->

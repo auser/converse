@@ -1,5 +1,5 @@
--module (talk_supervisor).
--include("talker.hrl").
+-module (converse_supervisor).
+-include("converse.hrl").
 
 -behaviour(supervisor).
 
@@ -23,15 +23,15 @@ init([]) ->
 	
 	SupFlags = {RestartStrategy, MaxRestarts, MaxTimeBetRestarts},
 	
-    TalkRouter = {talker_router, 
-		{talker_router, start_link, []}, 
+    TalkRouter = {converse_router, 
+		{converse_router, start_link, []}, 
 		permanent, 
 		TimeoutTime, 
 		worker, 
-		[talker_router]},
+		[converse_router]},
 
-    TalkAcceptor = {talk_listener, 
-		{talk_listener, start_link, [Port]}, 
+    TalkAcceptor = {converse_listener, 
+		{converse_listener, start_link, [Port]}, 
 		permanent,
 		TimeoutTime,
 		worker, 

@@ -1,7 +1,7 @@
--module (talker_db).
+-module (converse_db).
 -compile(export_all).
 
--include("talker.hrl").
+-include("converse.hrl").
 
 -include_lib("stdlib/include/qlc.hrl").
 

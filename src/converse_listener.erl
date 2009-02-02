@@ -1,11 +1,11 @@
--module (talk_listener).
--include("talker.hrl").
+-module (converse_listener).
+-include("converse.hrl").
 
 -export ([start_link/1, init/2]).
 
 start_link(Port) ->
 	io:format("Starting listener ~p~n", [Port]),
-	Pid = proc_lib:spawn_link(?MODULE, init, [Port, self()]),	
+	Pid = proc_lib:spawn_link(?MODULE, init, [Port, self()]),
 	io:format("Started listener ~p~n", [Pid]),
 	receive
 		{started} ->
@@ -13,19 +13,19 @@ start_link(Port) ->
 	end.
 	
 init(Port, Super) ->
-	ListeningSocket = open_port_for_listening(Port, talker_router:my_ip()),
+	ListeningSocket = open_port_for_listening(Port, converse_router:my_ip()),
 	{ok, {Ip, _}} = inet:sockname(ListeningSocket),
-	talker_router:set_local_address(Ip, Port),
+	converse_router:set_local_address(Ip, Port),
 	Super ! {started},
 	server(ListeningSocket).
 
 server(LS) ->
     case gen_tcp:accept(LS) of
 	{ok, S} ->
-	    case talker_router:get_local_address_port() of
+	    case converse_router:get_local_address_port() of
 		{undefined, LocalPort} ->
 		    {ok, {MyIP, _LocalPort}} = inet:sockname(S),
-			talker_router:set_local_address(MyIP, LocalPort);
+			converse_router:set_local_address(MyIP, LocalPort);
 		_ ->
 		    ok
 	    end,
@@ -42,11 +42,11 @@ server(LS) ->
   			true ->
 			    Address
 		    end,
-		    NewPid = talker_connection:new(NewAddress, Port, S),
+		    NewPid = converse_connection:new(NewAddress, Port, S),
 			io:format("Connecting using the pid: ~p~n", [NewPid]),
 		    gen_tcp:controlling_process(S, NewPid),
 		    inet:setopts(S, [{active, once}]),
-		    talker_router:register_connection(NewAddress, Port, NewPid, S)
+		    converse_router:register_connection(NewAddress, Port, NewPid, S)
 	    end,
 	    server(LS);
 	Other ->
