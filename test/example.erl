@@ -10,4 +10,4 @@ converse:send({{10,211,55,2}, 5001}, {deliver, "hi"}).
 converse:send({{0,0,0,0}, 5001}, {deliver, "hi"}).
 
 % tcp_listener
-converse:send({"0.0.0.0", 7899}, {go, "daddy"}).
+converse:send({"0.0.0.0", 7899}, {frank, "Hello world"}).

@@ -152,7 +152,6 @@ server(Config, ReceiverFunction, State) ->
 					Receiver
 			end,
 			?TRACE("Server setup and starting listen_loop", [Socket, RPid]),
-			RPid ! {test_to_rpid},
 			{ok, listen_loop(State#tcp_server{listen=Socket, receiver=RPid})};
 		{error, Reason} ->
 			{stop, Reason}
@@ -167,8 +166,7 @@ listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
-accept_loop(Server, Listen, Receiver, _State) ->
-	?TRACE("In accept_loop ready to accept...", [Server]),
+accept_loop(_Server, Listen, Receiver, _State) ->
 	case gen_tcp:accept(Listen) of
 		{ok, Socket} ->
 			gen_server:cast(?SERVER, {server_accepted, self() }),
@@ -192,6 +190,8 @@ read_socket(Socket) ->
 	    {ok, Packet} ->
 					?TRACE("Reading packet", [Packet]),
 					converse_packet:decode(Packet);
+			{error, timeout} ->
+					{normal};
 	    {error, closed} ->
 					?TRACE("Error", [])
 	end.
@@ -219,8 +219,8 @@ new_connection(Address, Port) ->
     case gen_tcp:connect(Address, Port, [binary, {active, false}], ?TIMEOUT) of
         {ok, Socket} ->
 					?TRACE("Ready for connection", [Socket]),
-					{ok, Socket};
+					{ok, Socket};					
         {error, Reason} ->
-            ?TRACE("couldn't connect", [Address, Port, Reason]),
-				    {error, Reason}
+					?TRACE("couldn't connect", [Address, Port, Reason]),
+					{error, Reason}
     end.
