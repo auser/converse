@@ -155,7 +155,6 @@ listen_loop(State = #tcp_server{ max = Max, connections = Connections}) when Max
 	State#tcp_server{ acceptor = undefined };
 
 listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
-	?TRACE("Spawned rpid", [Receiver]),
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
@@ -174,6 +173,7 @@ accept_loop(_Server, Listen, Receiver, _State) ->
   
 handler_loop(Socket, Server, Receiver, Ref) ->
 	{deliver, Data} = read_socket(Socket),	
+	io:format("Data looks like ~p~n", [Data]),
 	Receiver ! Data,
 	?TRACE("handler_loop received", [Data, Receiver]),
 	handler_loop(Socket, Server, Receiver, Ref).
@@ -184,7 +184,7 @@ read_socket(Socket) ->
 					?TRACE("Reading packet", [Packet]),
 					converse_packet:decode(Packet);
 			{error, timeout} ->
-					{normal};
+					normal;
 	    {error, closed} ->
 					?TRACE("Error", [])
 	end.

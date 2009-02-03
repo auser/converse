@@ -8,14 +8,15 @@ start() ->
 
 go() ->
 	start(),
-	converse:send({"0.0.0.0", 7899}, {frank, "Hello world"}).
+	converse:send({"0.0.0.0", 7899}, {frank, "Hello world"}),
+	converse:send({"0.0.0.0", 7899}, {what, "I don't know"}).
 
 receive_function() ->
-	io:format("-------- Started receive_function in test_converse_app~n"),
 	receive
 		{frank, Says} ->
-			io:format("Frank says ~p~n", [Says]);
+			io:format("Frank says ~p~n", [Says]),
+			receive_function();
 		Anything ->
-			io:format("-------- Test listen received ~p~n", [Anything]),
+			io:format("Received something else ~p~n", [Anything]),
 			receive_function()
 	end.
