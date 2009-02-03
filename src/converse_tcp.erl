@@ -4,7 +4,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, start_link/1, accept_loop/4, connections/0]).
+-export([start_link/2, start_link/1, accept_loop/4]).
 -export ([send/2, set_receive_function/1]).
 
 %% gen_server callbacks
@@ -27,11 +27,7 @@ start_link(ReceiverFunction) ->
   start_link(?DEFAULT_CONFIG, ReceiverFunction).
 
 start_link(Config, ReceiverFunction) ->
-	?TRACE("In start_link/2", [ReceiverFunction]),
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config, ReceiverFunction], []).
-
-connections() ->
-	gen_server:call(?MODULE, {connections}, ?TIMEOUT).
 
 set_receive_function(Fun) ->
 	gen_server:call(?MODULE, {set_receive_function, Fun}, ?TIMEOUT).
@@ -68,9 +64,6 @@ handle_call({set_receive_function, Fun}, _From, State) ->
 	?TRACE("Setting receive function as", [Fun, Pid]),
 	NewState = State#tcp_server{receiver = Pid},
 	{reply, {ok}, NewState};
-	
-handle_call(connections, _From, State = #tcp_server{connections=Conn}) ->
-	{reply, Conn, State};
 
 handle_call(_Request, _From, State) ->
 	Reply = ok,
