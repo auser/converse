@@ -1,16 +1,22 @@
 -include_lib("kernel/include/inet.hrl").
-
--define (NAMESPACE, ?MODULE).
--define (TIMEOUT, 20000).
--define (DEFAULT_PORT, 5002).
--define (TIMES_TO_RETRY, 3).
-
--define (PACKET_SETUP, [binary, {packet, 4}, {nodelay, true}, {active, once}, {send_timeout, 60000}]).
+-include ("config.hrl").
 
 -define (debug, true).
 
+-define (MAX_CONN, 200).
+-define (RETRY_TIMES, 3).
+-define (TIMEOUT, 20000).
+-define (DEFAULT_PORT, 7899).
+
+-define (DEFAULT_CONFIG, #config{
+					max_connections = ?MAX_CONN,
+					connection_retries = ?RETRY_TIMES,
+					timeout = ?TIMEOUT,
+					port = ?DEFAULT_PORT
+				}).
+
+-define (PACKET_SETUP, [binary, inet6, {packet, raw}, {reuseaddr, true}, {keepalive, true}, {active, false}]).
+
 -ifdef(debug).
-
 -define (TRACE(X, M), io:format("TRACE ~p:~p ~p ~p~n" ,[?MODULE, ?LINE, X, M])).
-
 -endif.
