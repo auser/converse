@@ -7,11 +7,7 @@ erlang do
   options :path => "./ebin"
   
   with_node(:node0, :stop => false) do
-    converse:start_in_shell_for_testing
-  end
-  
-  with_node(:node1) do
-    converse:start_in_shell_for_testing
+    test_converse_app:start
   end
   
 end

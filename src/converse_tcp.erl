@@ -4,8 +4,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, start_link/1, accept_loop/4]).
--export ([send/2, set_receive_function/1]).
+-export([start_link/2, start_link/1, accept_loop/4, stop/1]).
+-export ([send/2, set_receive_function/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -26,11 +26,16 @@
 start_link(ReceiverFunction) ->
   start_link(?DEFAULT_CONFIG, ReceiverFunction).
 
-start_link(Config, ReceiverFunction) ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config, ReceiverFunction], []).
+start_link(ReceiverFunction,Config) ->
+	?TRACE("Starting with", [ReceiverFunction, Config]),
+	{ok, Pid} = gen_server:start_link(?MODULE, [Config, ReceiverFunction], []),
+	Pid.
 
-set_receive_function(Fun) ->
-	gen_server:call(?MODULE, {set_receive_function, Fun}, ?TIMEOUT).
+stop(Pid) ->
+	gen_server:cast(Pid, {stop}).
+
+set_receive_function(Pid, Fun) ->
+	gen_server:call(Pid, {set_receive_function, Fun}, ?TIMEOUT).
 	
 %%====================================================================
 %% gen_server callbacks
@@ -45,7 +50,9 @@ set_receive_function(Fun) ->
 %% @end 
 %%--------------------------------------------------------------------
 init([Config, ReceiverFunction]) ->
+	io:format("Started init for converse_tcp~n"),
   process_flag(trap_exit, true),
+	?TRACE("Calling server(Config, ReceiverFunction)", [Config]),
   server(Config, ReceiverFunction, #tcp_server{}).
 
 %%--------------------------------------------------------------------
@@ -60,8 +67,7 @@ init([Config, ReceiverFunction]) ->
 %% @end 
 %%--------------------------------------------------------------------
 handle_call({set_receive_function, Fun}, _From, State) ->	
-	Pid = spawn_link(Fun),
-	?TRACE("Setting receive function as", [Fun, Pid]),
+	Pid = proc_lib:spawn_link(Fun),
 	NewState = State#tcp_server{receiver = Pid},
 	{reply, {ok}, NewState};
 
@@ -81,7 +87,7 @@ handle_cast({server_accepted, Pid}, State = #tcp_server{acceptor=Pid,connections
 	{noreply, listen_loop(State#tcp_server{connections=ConnCount})};
 
 handle_cast(stop, State) ->
-	{stop, normal, State}.
+	{noreply, normal, State}.
 
 %%--------------------------------------------------------------------
 %% @spec handle_info(Info, State) -> {noreply, State} |
@@ -92,17 +98,12 @@ handle_cast(stop, State) ->
 %%--------------------------------------------------------------------
 handle_info({'EXIT', Pid, normal}, State=#tcp_server{acceptor=Pid}) ->
 	{noreply, listen_loop(State)};
-    
-handle_info({'EXIT', Pid, Reason}, State=#tcp_server{acceptor=Pid}) ->
-	?TRACE("tcp_listener_error", [Reason]),
-	timer:sleep(100),
-	{noreply, listen_loop(State)};
   
-handle_info({'EXIT', _Pid, Reason}, State=#tcp_server{acceptor=Pid, connections=Conn}) ->
+handle_info({'EXIT', Pid, Reason}, State=#tcp_server{receiver=Pid, connections=Conn}) ->
 	case Reason of
 	  normal -> 
 			ok;
-	  _ -> 
+	  _ ->
 			?TRACE("error with connection", [Reason])
 	end,
 	NewConnCount = Conn-1,
@@ -135,7 +136,16 @@ code_change(_OldVsn, State, _Extra) ->
 
 % Listening methods
 server(Config, ReceiverFunction, State) ->
-	Port = Config#config.port, Receiver = Config#config.receiver,
+	io:format("Config: ~p~n", [Config]),
+	Port = config:parse(port, Config), 
+	?TRACE("Starting server on port", [Port]),
+	Receiver = case config:parse(receiver, Config) of
+		{error, no_key} ->
+			undefined;
+		Rec ->
+			Rec
+	end,
+	?TRACE("Starting server with receiver", [Receiver]),
 	case gen_tcp:listen(Port, ?PACKET_SETUP) of
 		{ok, Socket} ->			
 			RPid = case Receiver of
@@ -158,49 +168,82 @@ listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
-accept_loop(_Server, Listen, Receiver, _State) ->
+accept_loop(Server, Listen, Receiver, _State) ->	
 	case gen_tcp:accept(Listen) of
 		{ok, Socket} ->
-			gen_server:cast(?SERVER, {server_accepted, self() }),
-			handler_loop( Socket, Listen, Receiver, erlang:make_ref() );
+			gen_server:cast(Server, {server_accepted, self() }),
+			handler_loop( Socket, Server, Receiver, erlang:make_ref() );
 		{error, closed} ->
 			?TRACE("Closed tcp socket", []),
 			exit({error, closed});
 		Other ->
-			?TRACE("Accept failed", [Other]),
-			exit({error, accept_failed})
+			?TRACE("Accept failed", [Other])
 	end.
   
 handler_loop(Socket, Server, Receiver, Ref) ->
-	{deliver, Data} = read_socket(Socket),	
-	io:format("Data looks like ~p~n", [Data]),
-	Receiver ! Data,
-	?TRACE("handler_loop received", [Data, Receiver]),
+	case read_socket(Socket) of
+		{deliver, Data} ->
+			Receiver ! Data;
+		_Other ->
+			ok
+	end,
 	handler_loop(Socket, Server, Receiver, Ref).
 
 read_socket(Socket) ->
-	case gen_tcp:recv(Socket, 0, ?TIMEOUT) of
+	case gen_tcp:recv(Socket, 0) of
 	    {ok, Packet} ->
-					?TRACE("Reading packet", [Packet]),
 					converse_packet:decode(Packet);
 			{error, timeout} ->
 					normal;
 	    {error, closed} ->
-					?TRACE("Error", [])
+					normal
 	end.
 	
 % Loquacious methods
-send({Address, Port}, Data) ->
+send(Node, Data) ->
+	case Node of
+		{_Address, _Port} ->
+			send_to_address_and_port(Node, Data);
+		Name ->
+			send_to_node(Name, Data)
+	end.
+	
+send_to_node(Nodename, Data) ->
+	case get_node_address(Nodename) of
+		{error, _Error} ->
+			ok;
+		Add ->
+			?TRACE("Sending ~p to ~p~n", [Data, Add]),
+			send({Add, ?DEFAULT_PORT}, Data)
+	end.
+
+get_node_address(Nodename) ->
+	case net_adm:ping(Nodename) of
+		pang ->
+			error;
+		pong ->
+			case net_kernel:node_info(Nodename) of
+				{ok, NodeInformation} ->
+					[Add|_] = [ element(1, element(2, element(2,T))) || T <- NodeInformation, element(1, T) =:= address],
+					Add;
+				{error, Error} ->
+					?TRACE("Error in get_node_address", [Error]),
+					{error, Error}
+			end
+	end.
+	
+send_to_address_and_port({Address, Port}, Data) ->
 	case new_connection(Address, Port) of
 		{ok, Socket} ->
 			Bin = converse_packet:encode({deliver, Data}),
 			case gen_tcp:send(Socket, Bin) of
+				{error, timeout} ->
+					gen_tcp:close(Socket);
 				ok ->
-					?TRACE("Data sent", [Bin]), ok;
+					ok;
 				{error, closed} ->
 					gen_tcp:close(Socket);
-				{error, Reason} ->
-					?TRACE("Error sending data", [Reason]), 
+				{error, _Reason} ->
 					gen_tcp:close(Socket)
 			end,
 			ok;
@@ -209,11 +252,24 @@ send({Address, Port}, Data) ->
 	end.
 	
 new_connection(Address, Port) ->
+	new_connection_with_retry(Address, Port, ?TIMES_TO_RETRY).
+
+new_connection_with_retry(_Address, _Port, 0) ->
+	{error, closed};
+
+new_connection_with_retry(Address, Port, RetriesLeft) ->
     case gen_tcp:connect(Address, Port, [binary, {active, false}], ?TIMEOUT) of
         {ok, Socket} ->
-					?TRACE("Ready for connection", [Socket]),
-					{ok, Socket};					
-        {error, Reason} ->
-					?TRACE("couldn't connect", [Address, Port, Reason]),
-					{error, Reason}
+					{ok, Socket};
+				{error, Reason} ->
+				  ?TRACE("reconnect to socket", [Address, Reason]),
+					MoreRetries = RetriesLeft - 1,
+					timer:sleep(100),
+		      case new_connection_with_retry(Address, Port, MoreRetries) of
+							{error, closed} ->
+								?TRACE("Error creating connection to ~p:~p~n", [Address, Port]),
+								{error, closed};
+						Socket ->
+							{ok, Socket}
+			end
     end.

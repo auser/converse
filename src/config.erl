@@ -4,7 +4,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start_link/1, get_config/0, set_config/1, stop/0]).
+-export([start_link/0, start_link/1, get_config/1, set_config/2, stop/1, get_key/2, parse/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -21,20 +21,26 @@
 %% @end 
 %%--------------------------------------------------------------------
 start_link() ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, ?DEFAULT_CONFIG, []).
+	gen_server:start_link(?MODULE, ?DEFAULT_CONFIG, []).
 	
 start_link(Config) ->
-	gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
+	gen_server:start_link(?MODULE, Config, []).
 
-get_config() ->
-	?TRACE("Is the server running?", [whereis(?MODULE)]),
-  gen_server:call(?MODULE, {get_config}).
+get_key(Pid, Key) ->
+	Config = get_config(Pid),
+	get(Key, Config).
+	
+parse(Key, Config) ->
+	get(Key, Config).
+	
+get_config(Pid) ->
+  gen_server:call(Pid, {get_config}).
   
-set_config(Config) ->
-  gen_server:call(?MODULE, {set_config, Config}).
+set_config(Pid, Config) ->
+  gen_server:call(Pid, {set_config, Config}).
 
-stop() ->
-    gen_server:call(?MODULE, {stop}).
+stop(Pid) ->
+    gen_server:call(Pid, {stop}).
 
 
 %%====================================================================
@@ -119,3 +125,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+
+get(Key, Arr) ->
+	Out = [ T || T <- Arr, element(1, T) =:= Key],
+	case Out of
+		[] ->
+			{error, no_key};
+		[Val] ->
+			element(2, Val);
+		[_Val|Vals] ->
+			get(Key, Vals)
+	end.

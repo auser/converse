@@ -1,13 +1,14 @@
-% Start it up!
-erl -pa ./ebin -sname node0
-converse:start_link( 5001, self() ).
-converse:start_link_for_testing( 5001 ).
+converse:start(fun() -> test_app:receive_function() end, [{port, 1235}]).
 
-% Sending a message
-converse:send({{10,211,55,2}, 5001}, {hi}).
-converse:send({{10,211,55,2}, 5001}, {deliver, "hi"}).
+converse_tcp:start_link(fun() -> test_converse_app:receive_function() end, [{port, 1234}]).
 
-converse:send({{0,0,0,0}, 5001}, {deliver, "hi"}).
+converse_supervisor:start_link(fun() -> test_converse_app:receive_function() end, [{port, 1234}]).
 
-% tcp_listener
-converse:send({"0.0.0.0", 7899}, {frank, "Hello world"}).
+converse_supervisor:start_link(fun() -> test_converse_app:receive_function() end, [{port, 1234}]).
+converse_supervisor:start_link(fun() -> test_converse_app:receive_function() end, [{port, 1235}]).
+converse:send({{0,0,0,0}, 1234}, {frank, "bee bop"}).
+
+converse:send({{0,0,0,0}, 1235}, {frank, "bee bop"}).
+
+ReceiverFunction = fun() -> test_app:receive_function() end.
+{ok, Pid} = gen_server:start_link(converse_tcp, [[{port, 1234}], ReceiverFunction], []).
