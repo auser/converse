@@ -1,4 +1,4 @@
-converse:start(fun() -> test_app:receive_function() end, [{port, 1235}]).
+converse:start([test_app,receive_function], [{port, 1235}]).
 
 converse_tcp:start_link(fun() -> test_converse_app:receive_function() end, [{port, 1234}]).
 

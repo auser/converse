@@ -1,5 +1,4 @@
 -include_lib("kernel/include/inet.hrl").
--include ("config.hrl").
 
 -define (debug, true).
 

@@ -13,7 +13,7 @@
 
 -define (SERVER, ?MODULE).
 
--record(tcp_server, {max=100, connections=0, acceptor, listen, receiver}).
+-record(tcp_server, {max=100, connections=0, acceptor, listen, receiver, config}).
 
 %%====================================================================
 %% API
@@ -50,10 +50,9 @@ set_receive_function(Pid, Fun) ->
 %% @end 
 %%--------------------------------------------------------------------
 init([Config, ReceiverFunction]) ->
-	io:format("Started init for converse_tcp~n"),
   process_flag(trap_exit, true),
 	?TRACE("Calling server(Config, ReceiverFunction)", [Config]),
-  server(Config, ReceiverFunction, #tcp_server{}).
+  server(Config, ReceiverFunction, #tcp_server{config=Config}).
 
 %%--------------------------------------------------------------------
 %% @spec 
@@ -136,25 +135,22 @@ code_change(_OldVsn, State, _Extra) ->
 
 % Listening methods
 server(Config, ReceiverFunction, State) ->
-	io:format("Config: ~p~n", [Config]),
-	Port = config:parse(port, Config), 
+	Port = utils:safe_integer(config:parse(port, Config)), 
 	?TRACE("Starting server on port", [Port]),
 	Receiver = case config:parse(receiver, Config) of
-		{error, no_key} ->
-			undefined;
-		Rec ->
-			Rec
+		{} -> undefined;
+		Rec -> Rec
 	end,
 	?TRACE("Starting server with receiver", [Receiver]),
 	case gen_tcp:listen(Port, ?PACKET_SETUP) of
 		{ok, Socket} ->			
 			RPid = case Receiver of
-				undefined -> 
-					spawn(ReceiverFunction);
-				_ -> 
-					Receiver
+				undefined -> 					
+					[M,F] = ReceiverFunction, A = [self()],
+					spawn(M,F,A);
+				_ -> Receiver
 			end,
-			?TRACE("Server setup and starting listen_loop", [Socket, RPid]),
+			_NewConfig = config:update(receiver, RPid, Config),
 			{ok, listen_loop(State#tcp_server{listen=Socket, receiver=RPid})};
 		{error, Reason} ->
 			{stop, Reason}
@@ -166,9 +162,11 @@ listen_loop(State = #tcp_server{ max = Max, connections = Connections}) when Max
 
 listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
+	?TRACE("Listen loop", [Pid]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
 accept_loop(Server, Listen, Receiver, _State) ->	
+	?TRACE("Socket is open", [Listen]),
 	case gen_tcp:accept(Listen) of
 		{ok, Socket} ->
 			gen_server:cast(Server, {server_accepted, self() }),

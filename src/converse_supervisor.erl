@@ -58,5 +58,5 @@ child(Fun, Config, Number) ->
     [converse_tcp]}.
 
 child_id(Config, Number) ->
-	Port = config:parse(port, Config),
-   integer_to_list(Port) ++ "_" ++ integer_to_list(Number).
+	Port = config:parse(port, Config),	
+  integer_to_list(utils:safe_integer(Port)) ++ "_" ++ integer_to_list(Number).

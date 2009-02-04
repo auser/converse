@@ -3,7 +3,11 @@
 -compile (export_all).
 
 start(Fun, Config) ->
-	NewConfig = [?DEFAULT_CONFIG|Config],
+	?TRACE("In start/2", []),
+	[NewConfig] = case length(Config) > 0 of
+		true -> [ config:update(Key, Value, ?DEFAULT_CONFIG) || {Key, Value} <- Config ];
+		false -> ?DEFAULT_CONFIG
+	end,
 	case converse_supervisor:start_link(Fun, NewConfig) of
 		{error, Error} ->
 			?TRACE("Received shutdown error...", [Error]);
@@ -12,9 +16,12 @@ start(Fun, Config) ->
 			Pid
 	end.	
 	
-start(Fun) ->
-	Config = [],
-	start(Fun, Config).
+start(Args) ->
+	?TRACE("In start/1", []),
+	[M|Rest] = Args, [F|OtherArgs] = Rest,
+	Config = utils:parse_args(OtherArgs),
+	?TRACE("start()", [M,F, Config]),
+	start([M,F], Config).
 
 stop() ->
 	converse_tcp:stop().
