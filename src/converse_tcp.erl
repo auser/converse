@@ -83,6 +83,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({server_accepted, Pid}, State = #tcp_server{acceptor=Pid,connections=Conn}) ->
 	ConnCount = Conn+1,
+	?TRACE("Server accepted pid", [ConnCount, Pid]),
 	{noreply, listen_loop(State#tcp_server{connections=ConnCount})};
 
 handle_cast(stop, State) ->
@@ -135,9 +136,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 % Listening methods
 server(Config, ReceiverFunction, State) ->
-	Port = utils:safe_integer(config:parse(port, Config)), 
-	?TRACE("Starting server on port", [Port]),
-	Receiver = case config:parse(receiver, Config) of
+	Port = utils:safe_integer(config:parse(port, Config)),	
+	NewConfig = config:update(port, Port, Config),
+	?TRACE("Starting server on port", [Port, NewConfig]),
+	Receiver = case config:parse(receiver, NewConfig) of
 		{} -> undefined;
 		Rec -> Rec
 	end,
@@ -150,8 +152,8 @@ server(Config, ReceiverFunction, State) ->
 					spawn(M,F,A);
 				_ -> Receiver
 			end,
-			_NewConfig = config:update(receiver, RPid, Config),
-			{ok, listen_loop(State#tcp_server{listen=Socket, receiver=RPid})};
+			ANewConfig = config:update(receiver, RPid, NewConfig),
+			{ok, listen_loop(State#tcp_server{config=ANewConfig, listen=Socket, receiver=RPid})};
 		{error, Reason} ->
 			{stop, Reason}
 	end.
@@ -162,7 +164,7 @@ listen_loop(State = #tcp_server{ max = Max, connections = Connections}) when Max
 
 listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
-	?TRACE("Listen loop", [Pid]),
+	?TRACE("Listen loop",[self(), Listen, Receiver, State]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
 accept_loop(Server, Listen, Receiver, _State) ->	
