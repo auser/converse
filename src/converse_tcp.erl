@@ -82,6 +82,7 @@ handle_call(_Request, _From, State) ->
 %% @end 
 %%--------------------------------------------------------------------
 handle_cast({server_accepted, Pid}, State = #tcp_server{acceptor=Pid,connections=Conn}) ->
+	?TRACE("in {server_accepted}", [Pid]),
 	ConnCount = Conn+1,
 	?TRACE("Server accepted pid", [ConnCount, Pid]),
 	{noreply, listen_loop(State#tcp_server{connections=ConnCount})};
@@ -147,29 +148,26 @@ server(Config, ReceiverFunction, State) ->
 	case gen_tcp:listen(Port, ?PACKET_SETUP) of
 		{ok, Socket} ->			
 			RPid = case Receiver of
-				undefined -> 					
-					[M,F] = ReceiverFunction, A = [self()],
-					spawn(M,F,A);
+				undefined -> [M,F] = ReceiverFunction, A = [self()], spawn(M,F,A);
 				_ -> Receiver
 			end,
 			ANewConfig = config:update(receiver, RPid, NewConfig),
+			?TRACE("Socket is",[Socket]),
 			{ok, listen_loop(State#tcp_server{config=ANewConfig, listen=Socket, receiver=RPid})};
 		{error, Reason} ->
 			{stop, Reason}
 	end.
   
 listen_loop(State = #tcp_server{ max = Max, connections = Connections}) when Max == Connections ->
-	?TRACE("Connection limit reached", [Max]),
 	State#tcp_server{ acceptor = undefined };
 
 listen_loop(State = #tcp_server{ listen = Listen, receiver = Receiver}) ->
   Pid = proc_lib:spawn_link(?MODULE, accept_loop, [self(), Listen, Receiver, State]),
-	?TRACE("Listen loop",[self(), Listen, Receiver, State]),
   State#tcp_server{acceptor=Pid, receiver = Receiver}.
   
 accept_loop(Server, Listen, Receiver, _State) ->	
-	?TRACE("Socket is open", [Listen]),
-	case gen_tcp:accept(Listen) of
+	?TRACE("Socket is open", [Listen, Server]),
+	case catch gen_tcp:accept(Listen) of
 		{ok, Socket} ->
 			gen_server:cast(Server, {server_accepted, self() }),
 			handler_loop( Socket, Server, Receiver, erlang:make_ref() );
@@ -177,10 +175,12 @@ accept_loop(Server, Listen, Receiver, _State) ->
 			?TRACE("Closed tcp socket", []),
 			exit({error, closed});
 		Other ->
-			?TRACE("Accept failed", [Other])
+			?TRACE("Accept failed", [Other]),
+			exit({error, accept_failed})
 	end.
   
 handler_loop(Socket, Server, Receiver, Ref) ->
+	?TRACE("In handler_loop", [Socket]),
 	case read_socket(Socket) of
 		{deliver, Data} ->
 			Receiver ! Data;

@@ -2,6 +2,7 @@ require "rubygems"
 require "skelerl"
 
 erlang do  
+  testing true
   options :path => "./ebin"
   
   with_node(:node0, :stop => false, :boot => "start_sasl") do
