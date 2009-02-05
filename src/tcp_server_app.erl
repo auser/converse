@@ -3,22 +3,22 @@
 -behaviour(application).
 
 %% Internal API
--export([start_client/0]).
+-export([start_client/1]).
 
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
 %% A startup function for spawning new client connection handling FSM.
 %% To be called by the TCP listener process.
-start_client() -> supervisor:start_child(tcp_client_sup, []).
+start_client([RecFun]) -> supervisor:start_child(tcp_client_sup, [RecFun]).
 
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
 start(_Type, Args) ->
-		DefaultPort = config:parse(port, ?DEFAULT_CONFIG),
+		DefaultPort = utils:safe_integer(config:parse(port, ?DEFAULT_CONFIG)),
     Port = utils:get_app_env(listen_port, DefaultPort),
-    supervisor:start_link(?MODULE, [Port, tcp_app_fsm, Args]). % {local, ?MODULE}
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, tcp_app_fsm, Args]).
 
 stop(_S) ->
     ok.
@@ -32,7 +32,7 @@ init([Port, Module, ReceiveFunction]) ->
             [
               % TCP Listener
               {   tcp_server_sup,                          % Id       = internal id
-                  {tcp_listener,start_link,[Port,Module]}, % StartFun = {M, F, A}
+                  {tcp_listener,start_link,[Port,Module,ReceiveFunction]}, % StartFun = {M, F, A}
                   permanent,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor
@@ -51,6 +51,7 @@ init([Port, Module, ReceiveFunction]) ->
     };
 
 init([Module, ReceiveFunction]) ->
+		?TRACE("In init([Module, ReceiveFunction])", [Module, ReceiveFunction]),
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [

@@ -10,8 +10,8 @@
 
 %% FSM States
 -export([
-    'WAIT_FOR_SOCKET'/2,
-    'WAIT_FOR_DATA'/2
+    'SOCKET'/2,
+    'DATA'/2
 ]).
 
 -record(state, {
@@ -54,9 +54,9 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([ReceiveFunction]) ->
     process_flag(trap_exit, true),
-		[M,F] = ReceiveFunction, A = [self()], 
-		Receiver = spawn(M,F,A),
-    {ok, 'WAIT_FOR_SOCKET', #state{accept_handler=Receiver}}.
+		[M,F] = ReceiveFunction, A = [], 
+		Receiver = proc_lib:spawn_link(M,F,A),
+    {ok, 'SOCKET', #state{accept_handler=Receiver}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -65,30 +65,30 @@ init([ReceiveFunction]) ->
 %%          {stop, Reason, NewStateData}
 %% @private
 %%-------------------------------------------------------------------------
-'WAIT_FOR_SOCKET'({socket_ready, Socket}, State) when is_port(Socket) ->
+'SOCKET'({socket_ready, Socket}, State) when is_port(Socket) ->
     % Now we own the socket
     inet:setopts(Socket, [{active, once}, {packet, 2}, binary]),
     {ok, {IP, _Port}} = inet:peername(Socket),
-    {next_state, 'WAIT_FOR_DATA', State#state{socket=Socket, addr=IP}, ?TIMEOUT};
+    {next_state, 'DATA', State#state{socket=Socket, addr=IP}, ?TIMEOUT};
 
-'WAIT_FOR_SOCKET'(Other, State) ->
-    error_logger:error_msg("State: 'WAIT_FOR_SOCKET'. Unexpected message: ~p\n", [Other]),
+'SOCKET'(Other, State) ->
+    error_logger:error_msg("State: 'SOCKET'. Unexpected message: ~p\n", [Other]),
     %% Allow to receive async messages
-    {next_state, 'WAIT_FOR_SOCKET', State}.
+    {next_state, 'SOCKET', State}.
 
 %% Notification event coming from client
-'WAIT_FOR_DATA'({data, Data}, #state{socket=S,accept_handler=AcceptHandler} = State) ->
+'DATA'({data, Data}, #state{socket=S,accept_handler=AcceptHandler} = State) ->
 		Resp = AcceptHandler ! {data, Data},
     ok = gen_tcp:send(S, Resp),
-    {next_state, 'WAIT_FOR_DATA', State, ?TIMEOUT};
+    {next_state, 'DATA', State, ?TIMEOUT};
 
-'WAIT_FOR_DATA'(timeout, State) ->
+'DATA'(timeout, State) ->
     error_logger:error_msg("~p Client connection timeout - closing.\n", [self()]),
     {stop, normal, State};
 
-'WAIT_FOR_DATA'(Data, State) ->
+'DATA'(Data, State) ->
     io:format("~p Ignoring data: ~p\n", [self(), Data]),
-    {next_state, 'WAIT_FOR_DATA', State, ?TIMEOUT}.
+    {next_state, 'DATA', State, ?TIMEOUT}.
 
 %%-------------------------------------------------------------------------
 %% Func: handle_event/3
