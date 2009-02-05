@@ -1,8 +1,8 @@
 -module (tcp_app_fsm).
--include ("fsm.hrl").
+-include ("converse.hrl").
 -behaviour(gen_fsm).
 
--export([start_link/0, set_socket/2]).
+-export([start_link/1, set_socket/2]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -54,6 +54,8 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([ReceiveFunction]) ->
     process_flag(trap_exit, true),
+		[M,F] = ReceiveFunction, A = [self()], 
+		Receiver = spawn(M,F,A),
     {ok, 'WAIT_FOR_SOCKET', #state{accept_handler=Receiver}}.
 
 %%-------------------------------------------------------------------------
@@ -75,8 +77,9 @@ init([ReceiveFunction]) ->
     {next_state, 'WAIT_FOR_SOCKET', State}.
 
 %% Notification event coming from client
-'WAIT_FOR_DATA'({data, Data}, #state{socket=S} = State) ->
-    ok = gen_tcp:send(S, Data),
+'WAIT_FOR_DATA'({data, Data}, #state{socket=S,accept_handler=AcceptHandler} = State) ->
+		Resp = AcceptHandler ! {data, Data},
+    ok = gen_tcp:send(S, Resp),
     {next_state, 'WAIT_FOR_DATA', State, ?TIMEOUT};
 
 'WAIT_FOR_DATA'(timeout, State) ->

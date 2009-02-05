@@ -1,5 +1,5 @@
 -module (tcp_server_app).
-
+-include ("converse.hrl").
 -behaviour(application).
 
 %% Internal API
@@ -15,10 +15,10 @@ start_client() -> supervisor:start_child(tcp_client_sup, []).
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
-start(_Type, _Args) ->
+start(_Type, Args) ->
 		DefaultPort = config:parse(port, ?DEFAULT_CONFIG),
-    ListenPort = utils:get_app_env(listen_port, DefaultPort),
-    supervisor:start_link(?MODULE, [ListenPort, tcp_echo_fsm]). % {local, ?MODULE}
+    Port = utils:get_app_env(listen_port, DefaultPort),
+    supervisor:start_link(?MODULE, [Port, tcp_app_fsm, Args]). % {local, ?MODULE}
 
 stop(_S) ->
     ok.
@@ -26,7 +26,7 @@ stop(_S) ->
 %%----------------------------------------------------------------------
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
-init([Port, Module]) ->
+init([Port, Module, ReceiveFunction]) ->
     {ok,
         {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
@@ -40,7 +40,7 @@ init([Port, Module]) ->
               },
               % Client instance supervisor
               {   tcp_client_sup,
-                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Module]]},
+                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Module, ReceiveFunction]]},
                   permanent,                               % Restart  = permanent | transient | temporary
                   infinity,                                % Shutdown = brutal_kill | int() >= 0 | infinity
                   supervisor,                              % Type     = worker | supervisor
@@ -50,13 +50,13 @@ init([Port, Module]) ->
         }
     };
 
-init([Module]) ->
+init([Module, ReceiveFunction]) ->
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Client
               {   undefined,                               % Id       = internal id
-                  {Module,start_link,[]},                  % StartFun = {M, F, A}
+                  {Module,start_link,[ReceiveFunction]},   % StartFun = {M, F, A}
                   temporary,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor
