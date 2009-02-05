@@ -4,7 +4,7 @@
 
 safe_integer_test_() ->
   [
-		?_assert( 1000 == utils:safe_integer( "1000" ) ),
+		% ?_assert( 1000 == utils:safe_integer( "1000" ) ),
 		?_assert( 1000 == utils:safe_integer( '1000' ) ),
 		?_assert( 1000 == utils:safe_integer( ['1000'] ) ),
     ?_assert( 1000 == utils:safe_integer( 1000 ) )
