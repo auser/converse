@@ -22,7 +22,7 @@
 %% @end
 %%----------------------------------------------------------------------
 start_link(Port, Module) when is_integer(Port), is_atom(Module) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Port, Module], []).
+    gen_server:start_link(?MODULE, [Port, Module], []).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -94,8 +94,10 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{listener=ListSock, acceptor=Ref, module=Module} = State) ->
     try
         case set_sockopt(ListSock, CliSocket) of
-        ok              -> ok;
-        {error, Reason} -> exit({set_sockopt, Reason})
+        ok -> 
+					ok;
+        {error, Reason} -> 
+					exit({set_sockopt, Reason})
         end,
 
         %% New client connected - spawn a new process using the simple_one_for_one
@@ -149,8 +151,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%------------------------------------------------------------------------
 
-%% Taken from prim_inet.  We are merely copying some socket options from the
-%% listening socket to the new client socket.
 set_sockopt(ListSock, CliSocket) ->
     true = inet_db:register_socket(CliSocket, inet_tcp),
     case prim_inet:getopts(ListSock, [active, nodelay, keepalive, delay_send, priority, tos]) of

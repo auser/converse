@@ -1,4 +1,4 @@
--module(tcp_echo_fsm).
+-module (tcp_app_fsm).
 -include ("fsm.hrl").
 -behaviour(gen_fsm).
 
@@ -14,6 +14,13 @@
     'WAIT_FOR_DATA'/2
 ]).
 
+-record(state, {
+                socket,    			% client socket
+                addr,       		% client address
+								accept_handler 	% server accept hander
+               }).
+
+
 %%%------------------------------------------------------------------------
 %%% API
 %%%------------------------------------------------------------------------
@@ -27,8 +34,8 @@
 %%      respectively.
 %% @end
 %%-------------------------------------------------------------------------
-start_link() ->
-    gen_fsm:start_link(?MODULE, [], []).
+start_link(ReceiveFunction) ->
+    gen_fsm:start_link(?MODULE, [ReceiveFunction], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
@@ -45,9 +52,9 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([]) ->
+init([ReceiveFunction]) ->
     process_flag(trap_exit, true),
-    {ok, 'WAIT_FOR_SOCKET', #state{}}.
+    {ok, 'WAIT_FOR_SOCKET', #state{accept_handler=Receiver}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -61,6 +68,7 @@ init([]) ->
     inet:setopts(Socket, [{active, once}, {packet, 2}, binary]),
     {ok, {IP, _Port}} = inet:peername(Socket),
     {next_state, 'WAIT_FOR_DATA', State#state{socket=Socket, addr=IP}, ?TIMEOUT};
+
 'WAIT_FOR_SOCKET'(Other, State) ->
     error_logger:error_msg("State: 'WAIT_FOR_SOCKET'. Unexpected message: ~p\n", [Other]),
     %% Allow to receive async messages

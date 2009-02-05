@@ -3,6 +3,9 @@
 -define (debug, true).
 
 -define (MAX_CONN, 200).
+-define (MAXIMUM_RESTARTS, 10).
+-define (MAX_DELAY_TIME, 60).
+
 -define (TIMES_TO_RETRY, 3).
 -define (TIMEOUT, 20000).
 -define (DEFAULT_PORT, 7899).

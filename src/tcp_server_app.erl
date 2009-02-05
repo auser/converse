@@ -8,21 +8,17 @@
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
--define(MAX_RESTART,    5).
--define(MAX_TIME,      60).
--define(DEF_PORT,    2222).
-
 %% A startup function for spawning new client connection handling FSM.
 %% To be called by the TCP listener process.
-start_client() ->
-    supervisor:start_child(tcp_client_sup, []).
+start_client() -> supervisor:start_child(tcp_client_sup, []).
 
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
 start(_Type, _Args) ->
-    ListenPort = get_app_env(listen_port, ?DEF_PORT),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [ListenPort, tcp_echo_fsm]).
+		DefaultPort = config:parse(port, ?DEFAULT_CONFIG),
+    ListenPort = utils:get_app_env(listen_port, DefaultPort),
+    supervisor:start_link(?MODULE, [ListenPort, tcp_echo_fsm]). % {local, ?MODULE}
 
 stop(_S) ->
     ok.
@@ -32,7 +28,7 @@ stop(_S) ->
 %%----------------------------------------------------------------------
 init([Port, Module]) ->
     {ok,
-        {_SupFlags = {one_for_one, ?MAX_RESTART, ?MAX_TIME},
+        {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Listener
               {   tcp_server_sup,                          % Id       = internal id
@@ -56,7 +52,7 @@ init([Port, Module]) ->
 
 init([Module]) ->
     {ok,
-        {_SupFlags = {simple_one_for_one, ?MAX_RESTART, ?MAX_TIME},
+        {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Client
               {   undefined,                               % Id       = internal id
@@ -73,12 +69,3 @@ init([Module]) ->
 %%----------------------------------------------------------------------
 %% Internal functions
 %%----------------------------------------------------------------------
-get_app_env(Opt, Default) ->
-    case application:get_env(application:get_application(), Opt) of
-    {ok, Val} -> Val;
-    _ ->
-        case init:get_argument(Opt) of
-        [[Val | _]] -> Val;
-        error       -> Default
-        end
-    end.
