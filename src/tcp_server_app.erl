@@ -10,7 +10,10 @@
 
 %% A startup function for spawning new client connection handling FSM.
 %% To be called by the TCP listener process.
-start_client([RecFun]) -> supervisor:start_child(tcp_client_sup, [RecFun]).
+start_client(RecFun) -> 
+	[Fun] = RecFun,
+	?TRACE("in start_client for tcp_server_app", [Fun]),
+	supervisor:start_child(tcp_client_sup, Fun).
 
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
@@ -51,7 +54,6 @@ init([Port, Module, ReceiveFunction]) ->
     };
 
 init([Module, ReceiveFunction]) ->
-		?TRACE("In init([Module, ReceiveFunction])", [Module, ReceiveFunction]),
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [

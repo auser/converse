@@ -94,39 +94,46 @@ handle_cast(_Msg, State) ->
 %%-------------------------------------------------------------------------
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{listener=ListSock, receive_function=RecFun, acceptor=Ref, module=Module} = State) ->
-    try
-        case set_sockopt(ListSock, CliSocket) of
-        ok -> 
-					ok;
-        {error, Reason} -> 
-					exit({set_sockopt, Reason})
-        end,
+	try
+		case set_sockopt(ListSock, CliSocket) of
+			ok -> 
+				ok;
+			{error, Reason} -> 
+				exit({set_sockopt, Reason})
+	  end,
 
-        %% New client connected - spawn a new process using the simple_one_for_one
-        %% supervisor.
-        {ok, Pid} = tcp_server_app:start_client([RecFun]),
-        gen_tcp:controlling_process(CliSocket, Pid),
-        %% Instruct the new FSM that it owns the socket.
-        Module:set_socket(Pid, CliSocket),
+    %% New client connected - spawn a new process using the simple_one_for_one
+    %% supervisor.
+		io:format("Starting tcp_server_app client with ~p~n", [RecFun]),
+    {ok, Pid} = tcp_server_app:start_client(RecFun),
+    gen_tcp:controlling_process(CliSocket, Pid),
+    %% Instruct the new FSM that it owns the socket.
+    Module:set_socket(Pid, CliSocket),
 
-        %% Signal the network driver that we are ready to accept another connection
-        case prim_inet:async_accept(ListSock, -1) of
-        {ok,    NewRef} -> ok;
-        {error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
-        end,
+    %% Signal the network driver that we are ready to accept another connection
+    case prim_inet:async_accept(ListSock, -1) of
+	    {ok, NewRef} -> 
+				ok;
+			{error, NewRef} -> 
+				exit({async_accept, inet:format_error(NewRef)})
+		end,
 
-        {noreply, State#state{acceptor=NewRef}}
-    catch exit:Why ->
-        error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
-        {stop, Why, State}
-    end;
+		{noreply, State#state{acceptor=NewRef}}
+	catch exit:Why ->
+		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
+		{stop, Why, State}
+	end;
 
 handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, acceptor=Ref} = State) ->
-    error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
-    {stop, Error, State};
+	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
+	{stop, Error, State};
+
+handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
+	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
+	{noreply, State};
 
 handle_info(_Info, State) ->
-    {noreply, State}.
+  {noreply, State}.
 
 %%-------------------------------------------------------------------------
 %% @spec (Reason, State) -> any

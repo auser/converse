@@ -34,8 +34,9 @@
 %%      respectively.
 %% @end
 %%-------------------------------------------------------------------------
-start_link(ReceiveFunction) ->
-    gen_fsm:start_link(?MODULE, [ReceiveFunction], []).
+start_link(Fun) ->
+	?TRACE("In start_link tcp_app_fsm", [Fun]),
+   gen_fsm:start_link(?MODULE, Fun, []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
@@ -52,11 +53,12 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([ReceiveFunction]) ->
-    process_flag(trap_exit, true),
-		[M,F] = ReceiveFunction, A = [], 
-		Receiver = proc_lib:spawn_link(M,F,A),
-    {ok, 'SOCKET', #state{accept_handler=Receiver}}.
+init(ReceiveFunction) ->
+	?TRACE("In tcp_app_fsm init func", [ReceiveFunction]),
+	process_flag(trap_exit, true),
+	[M,F] = ReceiveFunction, A = [], 
+	Receiver = proc_lib:spawn_link(M,F,A),
+	{ok, 'SOCKET', #state{accept_handler=Receiver}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
