@@ -9,7 +9,7 @@
   %%
   %% mod: Specify the module name to start the application, plus args
   %%
-  {mod, {tcp_server_app, []}},
+  {mod, {converse_app, []}},
   {env, []}
  ]
 }.

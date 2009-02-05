@@ -36,7 +36,7 @@
 %%-------------------------------------------------------------------------
 start_link(Fun) ->
 	?TRACE("In start_link tcp_app_fsm", [Fun]),
-   gen_fsm:start_link(?MODULE, Fun, []).
+   gen_fsm:start_link(?MODULE, [Fun], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
@@ -53,10 +53,9 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init(ReceiveFunction) ->
-	?TRACE("In tcp_app_fsm init func", [ReceiveFunction]),
+init([Fun]) ->
 	process_flag(trap_exit, true),
-	[M,F] = ReceiveFunction, A = [], 
+	[M,F] = Fun, A = [self()],
 	Receiver = proc_lib:spawn_link(M,F,A),
 	{ok, 'SOCKET', #state{accept_handler=Receiver}}.
 
@@ -79,10 +78,10 @@ init(ReceiveFunction) ->
     {next_state, 'SOCKET', State}.
 
 %% Notification event coming from client
-'DATA'({data, Data}, #state{socket=S,accept_handler=AcceptHandler} = State) ->
-		Resp = AcceptHandler ! {data, Data},
-    ok = gen_tcp:send(S, Resp),
-    {next_state, 'DATA', State, ?TIMEOUT};
+'DATA'({data, Data}, #state{socket=S, accept_handler=AcceptHandler} = State) ->
+	DataToSend = converse_packet:decode(Data),
+	AcceptHandler ! {data, S, DataToSend},
+	{next_state, 'DATA', State, ?TIMEOUT};
 
 'DATA'(timeout, State) ->
     error_logger:error_msg("~p Client connection timeout - closing.\n", [self()]),
@@ -132,8 +131,9 @@ handle_info({tcp_closed, Socket}, _StateName,
     error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
     {stop, normal, StateData};
 
-handle_info(_Info, StateName, StateData) ->
-    {noreply, StateName, StateData}.
+handle_info(Info, StateName, StateData) ->
+	?TRACE("Received", Info),
+	{noreply, StateName, StateData}.
 
 %%-------------------------------------------------------------------------
 %% Func: terminate/3
