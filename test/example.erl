@@ -19,5 +19,5 @@ supervisor:start_link(tcp_client_sup, tcp_app_fsm, [tcp_app_fsm, [test_app, rece
 spawn(fun() -> test_app:receive_function() end).
 converse:send({{0,0,0,0}, 7899}, {ok, "hi"}).
 
-converse:send({{0,0,0,0}, 7899}, {ok, "hi"}).
+converse:open_and_send({{0,0,0,0}, 7899}, {ok, "hi"}).
 converse:send({{0,0,0,0}, 7899}, {who_are_you}).

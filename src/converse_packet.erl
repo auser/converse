@@ -7,3 +7,4 @@ encode(Binary) ->
 
 decode(Packet) ->
 	binary_to_term(Packet).
+	

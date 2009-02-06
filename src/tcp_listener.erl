@@ -92,6 +92,10 @@ handle_cast(_Msg, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------
+handle_info({inet_async, S, Ref, {ok, [F,P1,P0 | AddrData]}}, State) -> 
+	io:format("Received udp request on ~p with ~p~n", [S, AddrData]),
+	{noreply, State};
+	
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{listener=ListSock, receive_function=RecFun, acceptor=Ref, module=Module} = State) ->
 	try
@@ -102,7 +106,7 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 				exit({set_sockopt, Reason})
 	  end,
 
-    {ok, Pid} = converse_app:start_client(RecFun),
+    {ok, Pid} = converse_app:start_tcp_client(RecFun),
     gen_tcp:controlling_process(CliSocket, Pid),
     Module:set_socket(Pid, CliSocket),
 

@@ -3,14 +3,14 @@
 -behaviour(application).
 
 %% Internal API
--export([start_client/1]).
+-export([start_tcp_client/1]).
 
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
 %% A startup function for spawning new client connection handling FSM.
 %% To be called by the TCP listener process.
-start_client(Fun) -> 
+start_tcp_client(Fun) -> 
 	_ChildSpec = [{undefined,{tcp_app_fsm,start_link,[Fun]},temporary,2000,worker,[]}],
 	supervisor:start_child(tcp_client_sup, []).
 
@@ -20,6 +20,7 @@ start_client(Fun) ->
 start(_Type, Args) ->
 		DefaultPort = utils:safe_integer(config:parse(port, ?DEFAULT_CONFIG)),
     Port = utils:get_app_env(listen_port, DefaultPort),		
+		application:start(crypto),
     supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, tcp_app_fsm, Args]).
 
 stop(_S) ->
