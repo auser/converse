@@ -8,7 +8,7 @@ receive_function(From) ->
 	receive
 		{data, Socket, Data} ->
 			case Data of
-				{ok, Message} ->
+				{data, Message} ->
 					io:format("Received ok ~p from ~p~n", [Message, Socket]),
 					receive_function(From);
 				{who_are_you} ->
