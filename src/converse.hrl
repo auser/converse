@@ -7,7 +7,7 @@
 -define (MAX_DELAY_TIME, 60).
 
 -define (TIMES_TO_RETRY, 3).
--define (TIMEOUT, 20000).
+-define (TIMEOUT, 100000).
 -define (DEFAULT_PORT, 7899).
 
 -define (DEFAULT_CONFIG, [

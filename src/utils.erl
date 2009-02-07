@@ -51,10 +51,10 @@ get_app_env(Opt, Default) ->
         end
     end.
 
-running_accept_handler(undefined, Fun) ->
+running_receiver(undefined, Fun) ->
 		run_fun(Fun);
 
-running_accept_handler(Pid, Fun) when is_pid(Pid) ->
+running_receiver(Pid, Fun) when is_pid(Pid) ->
 	case is_process_alive(Pid) of
 		true -> Pid;
 		false ->run_fun(Fun)

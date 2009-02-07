@@ -6,7 +6,7 @@
 
 -export ([start/2, stop/1]).
 
-start(Fun) ->
+start_link(Fun) ->
 	converse_app:start(normal, [Fun]).
 
 start(_Type, Args) ->

@@ -18,7 +18,7 @@
                 socket,    			% client socket
                 addr,       		% client address
 								accept_fun,			% server accept function
-								accept_handler 	% server accept hander
+								receiver 	% server accept hander
                }).
 
 
@@ -55,8 +55,8 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([Fun]) ->
 	process_flag(trap_exit, true),
- 	Receiver = utils:running_accept_handler(undefined, Fun),
-	{ok, 'SOCKET', #state{accept_handler=Receiver,accept_fun=Fun}}.
+ 	Receiver = utils:running_receiver(undefined, Fun),
+	{ok, 'SOCKET', #state{receiver=Receiver,accept_fun=Fun}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -77,9 +77,9 @@ init([Fun]) ->
     {next_state, 'SOCKET', State}.
 
 %% Notification event coming from client
-'DATA'({data, Data}, #state{socket=S, accept_handler=Acceptor,accept_fun = Fun} = State) ->
+'DATA'({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	AcceptHandler = utils:running_accept_handler(Acceptor, Fun),
+	AcceptHandler = utils:running_receiver(Acceptor, Fun),
 	AcceptHandler ! {data, S, DataToSend},
 	{next_state, 'DATA', State, ?TIMEOUT};
 
