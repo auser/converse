@@ -61,5 +61,9 @@ running_accept_handler(Pid, Fun) when is_pid(Pid) ->
 	end.
 
 run_fun(Fun) ->
-	[M,F] = Fun, A = [self()],
+	case length(Fun) of
+		2 -> [M,F] = Fun;
+		1 -> [M] = Fun, F = receive_function
+	end,
+	A = [self()],
 	proc_lib:spawn_link(M,F,A).
