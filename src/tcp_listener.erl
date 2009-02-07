@@ -22,8 +22,8 @@
 %% @doc Called by a supervisor to start the listening process.
 %% @end
 %%----------------------------------------------------------------------
-start_link(Port, Module, RecFun) when is_integer(Port), is_atom(Module) ->
-    gen_server:start_link(?MODULE, [Port, Module, RecFun], []).
+start_link(Port, Module, RecFun) when is_integer(Port), is_atom(Module) ->	
+	gen_server:start_link(?MODULE, [Port, Module, RecFun], []).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -78,9 +78,9 @@ handle_call(Request, _From, State) ->
 %%      is returned, the server is stopped and `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------
+%%-------------------------------------------------------------------------	
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+	{noreply, State}.
 
 %%-------------------------------------------------------------------------
 %% @spec (Msg, State) ->{noreply, State}          |
@@ -132,6 +132,14 @@ handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
 	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
 	{noreply, State};
 
+handle_info({change_receiver, Fun}, #state{receive_function=RecFun} = State) ->
+	NewState = case RecFun =:= Fun of
+		false -> State#state{receive_function=Fun};
+		true -> State
+	end,
+	?TRACE("Changed receive function to ~p.\n", [NewState]),
+	{noreply, NewState};
+		
 handle_info(_Info, State) ->
   {noreply, State}.
 

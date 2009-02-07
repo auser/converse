@@ -21,7 +21,7 @@ start(_Type, Args) ->
 		DefaultPort = utils:safe_integer(config:parse(port, ?DEFAULT_CONFIG)),
     Port = utils:get_app_env(listen_port, DefaultPort),		
 		application:start(crypto),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [Port, tcp_app_fsm, Args]).
+    supervisor:start_link({local, converse}, ?MODULE, [Port, tcp_app_fsm, Args]).
 
 stop(_S) ->
     ok.
@@ -35,15 +35,15 @@ init([Port, Module, ReceiveFunction]) ->
         {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Listener
-              {   tcp_server_sup,                          % Id       = internal id
+              {   tcp_server,                          % Id       = internal id
                   {tcp_listener,start_link,[Port,Module,ReceiveFunction]}, % StartFun = {M, F, A}
                   permanent,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor
                   [tcp_listener]                           % Modules  = [Module] | dynamic
-              },
+              }
               % Client instance supervisor
-              {   tcp_client_sup,
+              ,{  tcp_client,
                   {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Module, ReceiveFunction]]},
                   permanent,                               % Restart  = permanent | transient | temporary
                   infinity,                                % Shutdown = brutal_kill | int() >= 0 | infinity

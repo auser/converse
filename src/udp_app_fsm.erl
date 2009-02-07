@@ -55,7 +55,7 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([Fun]) ->
 	process_flag(trap_exit, true),
- 	Receiver = running_accept_handler(undefined, Fun),
+ 	Receiver = utils:running_accept_handler(undefined, Fun),
 	{ok, 'SOCKET', #state{accept_handler=Receiver,accept_fun=Fun}}.
 
 %%-------------------------------------------------------------------------
@@ -77,9 +77,9 @@ init([Fun]) ->
     {next_state, 'SOCKET', State}.
 
 %% Notification event coming from client
-'DATA'({data, Data}, #state{socket=S, accept_handler=AcceptHandler,accept_fun = Fun} = State) ->
+'DATA'({data, Data}, #state{socket=S, accept_handler=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	AcceptHandler = running_accept_handler(AcceptHandler, Fun),
+	AcceptHandler = utils:running_accept_handler(Acceptor, Fun),
 	AcceptHandler ! {data, S, DataToSend},
 	{next_state, 'DATA', State, ?TIMEOUT};
 
@@ -153,16 +153,3 @@ terminate(_Reason, _StateName, #state{socket=Socket}) ->
 %%-------------------------------------------------------------------------
 code_change(_OldVsn, StateName, StateData, _Extra) ->
     {ok, StateName, StateData}.
-
-running_accept_handler(undefined, Fun) ->
-		run_fun(Fun);
-		
-running_accept_handler(Pid, Fun) when is_pid(Pid) ->
-	case is_process_alive(Pid) of
-		true -> Pid;
-		false ->run_fun(Fun)
-	end.
-
-run_fun(Fun) ->
-	[M,F] = Fun, A = [self()],
-	proc_lib:spawn_link(M,F,A).

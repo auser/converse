@@ -6,6 +6,9 @@
 
 -export ([start/2, stop/1]).
 
+start(Fun) ->
+	converse_app:start(normal, [Fun]).
+
 start(_Type, Args) ->
 	converse_supervisor:start_link(Args).
 

@@ -21,3 +21,10 @@ receive_function(From) ->
 			From ! {reply, Reply},
 			receive_function(From)
 	end.
+
+hear(From) ->
+	receive
+		Anything ->
+			io:format("Heard ~p~n", [From]),
+			hear(From)
+	end.

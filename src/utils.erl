@@ -1,6 +1,11 @@
 -module (utils).
 -compile (export_all).
 	
+get_child_pid(Name, Key) ->
+	L = supervisor:which_children(Name),
+	{value, {_, Pid, _, _}} = lists:keysearch(Key, 1, L),
+	Pid.
+	
 safe_integer(Arg) ->
 	Int = case erlang:is_list(Arg) of
 		true -> erlang:hd(Arg);
@@ -45,3 +50,16 @@ get_app_env(Opt, Default) ->
         error       -> Default
         end
     end.
+
+running_accept_handler(undefined, Fun) ->
+		run_fun(Fun);
+
+running_accept_handler(Pid, Fun) when is_pid(Pid) ->
+	case is_process_alive(Pid) of
+		true -> Pid;
+		false ->run_fun(Fun)
+	end.
+
+run_fun(Fun) ->
+	[M,F] = Fun, A = [self()],
+	proc_lib:spawn_link(M,F,A).
