@@ -1,9 +1,9 @@
--module(tcp_listener).
+-module (converse_listener).
 -include ("converse.hrl").
 -behaviour(gen_server).
 
 %% External API
--export([start_link/3]).
+-export([start_link/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -22,8 +22,8 @@
 %% @doc Called by a supervisor to start the listening process.
 %% @end
 %%----------------------------------------------------------------------
-start_link(Port, Module, RecFun) when is_integer(Port), is_atom(Module) ->	
-	gen_server:start_link(?MODULE, [Port, Module, RecFun], []).
+start_link(Module, Config) when is_atom(Module) ->	
+	gen_server:start_link(?MODULE, [Module, Config], []).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -39,15 +39,22 @@ start_link(Port, Module, RecFun) when is_integer(Port), is_atom(Module) ->
 %%      Create listening socket.
 %% @end
 %%----------------------------------------------------------------------
-init([Port, Module, ReceiveFunction]) ->
+init([Module, Config]) ->
     process_flag(trap_exit, true),
-    Opts = [binary, {packet, 2}, {reuseaddr, true},
-            {keepalive, true}, {backlog, 30}, {active, false}],
+		
+		DefaultPort = utils:safe_integer(config:parse(port, Config)),		
+		ReceiveFunction = config:parse(receive_function, Config),
+		Port = utils:get_app_env(listen_port, DefaultPort),
+
+    Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
+		?TRACE("Starting converse_listener on port ~p~n", [Port]),
+		
     case gen_tcp:listen(Port, Opts) of
-    {ok, Listen_socket} ->
+    {ok, Sock} ->
         %%Create first accepting process
-        {ok, Ref} = prim_inet:async_accept(Listen_socket, -1),
-        {ok, #state{listener = Listen_socket,
+        {ok, Ref} = prim_inet:async_accept(Sock, -1),
+				?TRACE("Listening on port with Opts", [Port, Opts]),
+        {ok, #state{listener = Sock,
                     acceptor = Ref,
 										receive_function=ReceiveFunction,
                     module   = Module}};
@@ -106,7 +113,7 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 				exit({set_sockopt, Reason})
 	  end,
 
-    {ok, Pid} = converse_app:start_tcp_client(RecFun),
+    {ok, Pid} = converse:start_tcp_client(RecFun),
     gen_tcp:controlling_process(CliSocket, Pid),
     Module:set_socket(Pid, CliSocket),
 
@@ -140,7 +147,8 @@ handle_info({change_receiver, Fun}, #state{receive_function=RecFun} = State) ->
 	?TRACE("Changed receive function to ~p.\n", [NewState]),
 	{noreply, NewState};
 		
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+	?TRACE("Received info", [Info]),
   {noreply, State}.
 
 %%-------------------------------------------------------------------------

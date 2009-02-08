@@ -2,7 +2,7 @@
 -compile (export_all).
 
 start() ->
-	converse_app:start(normal, [?MODULE, receive_function]).
+	converse:start(normal, [{receive_function, [?MODULE, receive_function]}]).
 
 receive_function(From) ->
 	receive

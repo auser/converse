@@ -7,18 +7,23 @@
 
 %% Internal API
 -export([start_tcp_client/1]).
-
+-export ([open_and_send/2, send_to_open/2]).
 %% Application and Supervisor callbacks
--export([start_link/1, start/2, stop/1, init/1]).
+-export([start/2, stop/1, init/1]).
 
 %% API
-start_link(Config) ->
-	converse_app:start(normal, Config).
+% start_link(Config) ->
+% 	converse:start(normal, Config).
 	
 open_and_send({Address, Port}, Data) ->
-	{ok, Socket} = gen_tcp:connect(Address, Port, [{packet, 2}]),
-	send_to_open(Socket, Data),
-	{ok, Socket}.
+	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
+		{ok, Socket} ->
+			send_to_open(Socket, Data),
+			{ok, Socket};
+		{error, Reason} ->
+			io:format("Error ~p~n", [Reason]),
+			{error, Reason}
+	end.
 
 send_to_open(Socket, Data) ->
 	gen_tcp:send(Socket, converse_packet:encode(Data)),
@@ -34,10 +39,8 @@ start_tcp_client(Fun) ->
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
 start(_Type, Config) ->
-		DefaultPort = utils:safe_integer(config:parse(port, ?DEFAULT_CONFIG)),
-    Port = utils:get_app_env(listen_port, DefaultPort),		
 		application:start(crypto),
-    supervisor:start_link({local, converse}, ?MODULE, [Port, tcp_app_fsm, Config]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]).
 
 stop(_S) ->
     ok.
@@ -45,39 +48,38 @@ stop(_S) ->
 %%----------------------------------------------------------------------
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
-init([Port, Module, ReceiveFunction]) ->
-		?TRACE("in init([3])", [Port, Module, ReceiveFunction]),
+init([Module, Config]) ->
+	?TRACE("In init([]) for converse.erl", [Module, Config]),
     {ok,
         {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Listener
               {   tcp_server,                          % Id       = internal id
-                  {tcp_listener,start_link,[Port,Module,ReceiveFunction]}, % StartFun = {M, F, A}
+                  {converse_listener,start_link,[Module,Config]}, % StartFun = {M, F, A}
                   permanent,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor
-                  [tcp_listener]                           % Modules  = [Module] | dynamic
+                  [converse_listener]                           % Modules  = [Module] | dynamic
               }
               % Client instance supervisor
               ,{  tcp_client,
-                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Module, ReceiveFunction]]},
+                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [client, Module, Config]]},
                   permanent,                               % Restart  = permanent | transient | temporary
                   infinity,                                % Shutdown = brutal_kill | int() >= 0 | infinity
                   supervisor,                              % Type     = worker | supervisor
-                  [Module]                                       % Modules  = [Module] | dynamic
+                  []                                       % Modules  = [Module] | dynamic
               }
             ]
         }
     };
 
-init([Module, Fun]) ->
-		?TRACE("in init([2])", [Module, Fun]),
+init([client, Module, Config]) ->
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Client
               {   undefined,                               % Id       = internal id
-                  {Module,start_link,[Fun]},   % StartFun = {M, F, A}
+                  {Module,start_link,[Config]},   				 % StartFun = {M, F, A}
                   temporary,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor

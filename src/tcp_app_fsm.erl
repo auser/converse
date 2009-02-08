@@ -35,8 +35,8 @@
 %%      respectively.
 %% @end
 %%-------------------------------------------------------------------------
-start_link(Fun) ->
-   gen_fsm:start_link(?MODULE, [Fun], []).
+start_link(Config) ->
+   gen_fsm:start_link(?MODULE, [Config], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
@@ -53,8 +53,9 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([Fun]) ->
+init([Config]) ->
 	process_flag(trap_exit, true),
+	Fun = config:parse(receive_function, Config),
 	Receiver = utils:running_receiver(undefined, Fun),
 	{ok, 'SOCKET', #state{receiver=Receiver,accept_fun=Fun}}.
 
@@ -79,7 +80,7 @@ init([Fun]) ->
 %% Notification event coming from client
 'DATA'({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	AcceptHandler = layers:running_receiver(Acceptor, Fun),
+	AcceptHandler = utils:running_receiver(Acceptor, Fun),
 	AcceptHandler ! {data, S, DataToSend},
 	{next_state, 'DATA', State, ?TIMEOUT};
 
