@@ -98,13 +98,10 @@ handle_cast(_Msg, State) ->
 %%      `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------
-handle_info({inet_async, S, Ref, {ok, [F,P1,P0 | AddrData]}}, State) -> 
-	io:format("Received udp request on ~p with ~p~n", [S, AddrData]),
-	{noreply, State};
-	
+%%-------------------------------------------------------------------------	
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{listener=ListSock, receive_function=RecFun, acceptor=Ref, module=Module} = State) ->
+	?TRACE("Received info", [CliSocket]),
 	try
 		case set_sockopt(ListSock, CliSocket) of
 			ok -> 

@@ -8,3 +8,7 @@ converse_listener:start_link(tcp_app_fsm, [{receive_function, [test_app,receive_
 layers:init([converse, whisper, test_app]).
 {ok, Sock} = converse:open_and_send({{0,0,0,0}, 1235}, {data, "hi"}).
 converse:send_to_open(Sock, {data, "yo"}).
+
+converse:start(normal, [{receive_function, [test_app,receive_function]}, {port, 1235}]).
+{ok, Socket} = gen_udp:open(0, [binary]).
+ok = gen_udp:send(Socket, {0,0,0,0}, 1235, <<"hi">>).
