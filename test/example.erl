@@ -5,7 +5,7 @@ converse_listener:start_link(tcp_app_fsm, [{receive_function, [test_app,receive_
 % P = utils:get_child_pid(converse, tcp_server).
 % P ! {change_receiver, [test_app, hear]}.
 % test_app:start().
-layers:init([converse, whisper, test_app]).
+layers:start([converse, whisper, test_app], [{port, 1234}]).
 {ok, Sock} = converse:open_and_send({{0,0,0,0}, 1235}, {data, "hi"}).
 converse:send_to_open(Sock, {data, "yo"}).
 

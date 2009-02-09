@@ -41,7 +41,6 @@ start_tcp_client(Fun) ->
 %%----------------------------------------------------------------------
 start(_Type, Config) ->
 		application:start(crypto),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [Config]),
 		supervisor:start_link({local, ?MODULE}, ?MODULE, [Config]).
 
 stop(_S) ->
