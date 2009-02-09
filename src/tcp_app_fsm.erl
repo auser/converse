@@ -10,8 +10,8 @@
 
 %% FSM States
 -export([
-    'SOCKET'/2,
-    'DATA'/2
+    socket/2,
+    data/2
 ]).
 
 -record(state, {
@@ -55,9 +55,10 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([Config]) ->
 	process_flag(trap_exit, true),
-	Fun = config:parse(successor, Config),
+	Fun = config:parse(successor, Config), 
 	Receiver = converse_utils:running_receiver(undefined, Fun),
-	{ok, 'SOCKET', #state{receiver=Receiver,accept_fun=Fun}}.
+	?TRACE("In init tcp_app_fsm", []),
+	{ok, socket, #state{receiver=Receiver,accept_fun=Fun}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -66,31 +67,33 @@ init([Config]) ->
 %%          {stop, Reason, NewStateData}
 %% @private
 %%-------------------------------------------------------------------------
-'SOCKET'({socket_ready, Socket}, State) when is_port(Socket) ->
-    % Now we own the socket
-    inet:setopts(Socket, [{active, once}, {packet, 2}, binary]),
-    {ok, {IP, _Port}} = inet:peername(Socket),
-    {next_state, 'DATA', State#state{socket=Socket, addr=IP}, ?TIMEOUT};
+socket({socket_ready, Socket}, State) when is_port(Socket) ->
+	% Now we own the socket
+	inet:setopts(Socket, [{active, once}, {packet, 2}, binary]),
+	{ok, {IP, _Port}} = inet:peername(Socket),
+	{next_state, data, State#state{socket=Socket, addr=IP}};
 
-'SOCKET'(Other, State) ->
-    error_logger:error_msg("State: 'SOCKET'. Unexpected message: ~p\n", [Other]),
-    %% Allow to receive async messages
-    {next_state, 'SOCKET', State}.
+socket(Other, State) ->
+	error_logger:error_msg("State: socket. Unexpected message: ~p\n", [Other]),
+	%% Allow to receive async messages
+	{next_state, socket, State}.
 
 %% Notification event coming from client
-'DATA'({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
+data({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
 	AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
-	AcceptHandler ! {data, S, DataToSend},
-	{next_state, 'DATA', State, ?TIMEOUT};
+	Response = AcceptHandler ! {data, S, DataToSend},
+	io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
+	% ?TRACE("Sent data", [DataToSend]),
+	{next_state, data, State#state{receiver = AcceptHandler}};
 
-'DATA'(timeout, State) ->
-    error_logger:error_msg("~p Client connection timeout - closing.\n", [self()]),
-    {stop, normal, State};
+data(timeout, State) ->
+	error_logger:error_msg("~p Connection timeout - closing.\n", [self()]),
+	{stop, normal, State};
 
-'DATA'(Data, State) ->
-    io:format("~p Ignoring data: ~p\n", [self(), Data]),
-    {next_state, 'DATA', State, ?TIMEOUT}.
+data(Data, State) ->
+	io:format("~p Ignoring data: ~p\n", [self(), Data]),
+	{next_state, data, State, ?TIMEOUT}.
 
 %%-------------------------------------------------------------------------
 %% Func: handle_event/3
@@ -100,7 +103,7 @@ init([Config]) ->
 %% @private
 %%-------------------------------------------------------------------------
 handle_event(Event, StateName, StateData) ->
-    {stop, {StateName, undefined_event, Event}, StateData}.
+	{stop, {StateName, undefined_event, Event}, StateData}.
 
 %%-------------------------------------------------------------------------
 %% Func: handle_sync_event/4
@@ -122,10 +125,11 @@ handle_sync_event(Event, _From, StateName, StateData) ->
 %%          {stop, Reason, NewStateData}
 %% @private
 %%-------------------------------------------------------------------------
-handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = StateData) ->
-    % Flow control: enable forwarding of next TCP message
-    inet:setopts(Socket, [{active, once}]),
-    ?MODULE:StateName({data, Bin}, StateData);
+handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = State) ->
+	% Flow control: enable forwarding of next TCP message
+	inet:setopts(Socket, [{active, once}]),
+	?TRACE("handing info new tcp socket", [Socket, State, Bin]),
+	?MODULE:StateName({data, Bin}, State);
 
 handle_info({tcp_closed, Socket}, _StateName,
             #state{socket=Socket, addr=Addr} = StateData) ->
@@ -133,7 +137,7 @@ handle_info({tcp_closed, Socket}, _StateName,
     {stop, normal, StateData};
 
 handle_info(Info, StateName, StateData) ->
-	?TRACE("Received", Info),
+	?TRACE("Received info", Info),
 	{noreply, StateName, StateData}.
 
 %%-------------------------------------------------------------------------

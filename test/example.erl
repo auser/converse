@@ -7,9 +7,16 @@ converse:send_to_open(Sock, {data, "yo"}).
 % P = utils:get_child_pid(converse, tcp_server).
 % P ! {change_receiver, [test_app, hear]}.
 % test_app:start().
+layser:init().
+layers:add(converse, [{port, 1234}]).
+layers:add(whisper, []).
+layers:add(email, [{to_email, "alerner@att.com"}]).
+layers:add(test_app, []).
+layers:start().
+==
 layers:start([converse, whisper, test_app], [{port, 1234}]).
-
-{ok, Sock} = converse:open_and_send({{0,0,0,0}, 1234}, {data, "hi"}).
+S = whisper:encrypt("hi"),
+{ok, Sock} = converse:open_and_send({{0,0,0,0}, 1234}, {data, S}).
 converse:send_to_open(Sock, {data, "yo"}).
 
 converse:start(normal, [{receive_function, [test_app,receive_function]}, {port, 1235}]).
