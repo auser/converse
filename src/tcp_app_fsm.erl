@@ -56,7 +56,7 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 init([Config]) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(receive_function, Config),
-	Receiver = utils:running_receiver(undefined, Fun),
+	Receiver = converse_utils:running_receiver(undefined, Fun),
 	{ok, 'SOCKET', #state{receiver=Receiver,accept_fun=Fun}}.
 
 %%-------------------------------------------------------------------------
@@ -80,7 +80,7 @@ init([Config]) ->
 %% Notification event coming from client
 'DATA'({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	AcceptHandler = utils:running_receiver(Acceptor, Fun),
+	AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
 	AcceptHandler ! {data, S, DataToSend},
 	{next_state, 'DATA', State, ?TIMEOUT};
 

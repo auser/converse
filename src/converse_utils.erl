@@ -1,4 +1,4 @@
--module (utils).
+-module (converse_utils).
 -compile (export_all).
 	
 get_child_pid(Name, Key) ->

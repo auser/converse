@@ -42,9 +42,9 @@ start_link(Config) ->
 init([Config]) ->
     process_flag(trap_exit, true),
 		
-		DefaultPort = utils:safe_integer(config:parse(port, Config)),		
+		DefaultPort = converse_utils:safe_integer(config:parse(port, Config)),		
 		ReceiveFunction = config:parse(receive_function, Config),
-		Port = utils:get_app_env(listen_port, DefaultPort),
+		Port = converse_utils:get_app_env(listen_port, DefaultPort),
 
     Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
 		?TRACE("Starting converse_listener on port ~p~n", [Port]),
