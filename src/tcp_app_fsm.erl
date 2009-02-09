@@ -55,7 +55,7 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%-------------------------------------------------------------------------
 init([Config]) ->
 	process_flag(trap_exit, true),
-	Fun = config:parse(receive_function, Config),
+	Fun = config:parse(successor, Config),
 	Receiver = converse_utils:running_receiver(undefined, Fun),
 	{ok, 'SOCKET', #state{receiver=Receiver,accept_fun=Fun}}.
 

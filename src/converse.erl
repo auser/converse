@@ -32,8 +32,8 @@ send_to_open(Socket, Data) ->
 start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).
 	
-start_tcp_client(Fun) -> 
-	_ChildSpec = [{undefined,{tcp_app_fsm,start_link,[Fun]},temporary,2000,worker,[]}],
+start_tcp_client(Config) -> 
+	_ChildSpec = [{undefined,{tcp_app_fsm,start_link,[Config]},temporary,2000,worker,[]}],
 	supervisor:start_child(tcp_client_sup, []).
 
 %%----------------------------------------------------------------------
