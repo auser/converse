@@ -43,7 +43,7 @@ init([Config]) ->
     process_flag(trap_exit, true),
 		
 		DefaultPort = converse_utils:safe_integer(config:parse(port, Config)),		
-		ReceiveFunction = config:parse(receive_function, Config),
+		ReceiveFunction = config:parse(successor, Config),
 		Port = converse_utils:get_app_env(listen_port, DefaultPort),
 
     Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
