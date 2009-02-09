@@ -47,13 +47,13 @@ init([Config]) ->
 		Port = converse_utils:get_app_env(listen_port, DefaultPort),
 
     Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
-		?TRACE("Starting converse_listener on port ~p~n", [Port]),
+		?TRACE("Starting converse_listener with config ~p~n", [Config]),
 				
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(Sock, -1),
-				?TRACE("Listening on port with Opts", [Port, Opts]),
+				?TRACE("Listening on port with Opts", [Port, ReceiveFunction, Opts]),
         {ok, #state{listener = Sock,
                     tcp_acceptor = Ref,
 										% udp_acceptor = UdpAcceptor,
