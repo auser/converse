@@ -3,17 +3,17 @@
 -behaviour(gen_server).
 
 %% External API
--export([start_link/2]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
 -record(state, {
-                listener, 	      % Listening socket
-                acceptor,       	% Asynchronous acceptor's internal reference
-                module,          	% FSM handling module
-								receive_function	% Receive function
+                listener,
+                tcp_acceptor, 
+								% udp_acceptor,
+								receive_function
                }).
 
 %%--------------------------------------------------------------------
@@ -22,8 +22,8 @@
 %% @doc Called by a supervisor to start the listening process.
 %% @end
 %%----------------------------------------------------------------------
-start_link(Module, Config) when is_atom(Module) ->	
-	gen_server:start_link(?MODULE, [Module, Config], []).
+start_link(Config) ->	
+	gen_server:start_link(?MODULE, [Config], []).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -39,7 +39,7 @@ start_link(Module, Config) when is_atom(Module) ->
 %%      Create listening socket.
 %% @end
 %%----------------------------------------------------------------------
-init([Module, Config]) ->
+init([Config]) ->
     process_flag(trap_exit, true),
 		
 		DefaultPort = utils:safe_integer(config:parse(port, Config)),		
@@ -48,16 +48,16 @@ init([Module, Config]) ->
 
     Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
 		?TRACE("Starting converse_listener on port ~p~n", [Port]),
-		
+				
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(Sock, -1),
 				?TRACE("Listening on port with Opts", [Port, Opts]),
         {ok, #state{listener = Sock,
-                    acceptor = Ref,
-										receive_function=ReceiveFunction,
-                    module   = Module}};
+                    tcp_acceptor = Ref,
+										% udp_acceptor = UdpAcceptor,
+										receive_function=ReceiveFunction}};
     {error, Reason} ->
         {stop, Reason}
     end.
@@ -100,19 +100,17 @@ handle_cast(_Msg, State) ->
 %% @private
 %%-------------------------------------------------------------------------	
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
-            #state{listener=ListSock, receive_function=RecFun, acceptor=Ref, module=Module} = State) ->
-	?TRACE("Received info", [CliSocket]),
+            #state{listener=ListSock, receive_function=RecFun, tcp_acceptor=Ref} = State) ->
 	try
 		case set_sockopt(ListSock, CliSocket) of
-			ok -> 
-				ok;
+			ok -> ok;
 			{error, Reason} -> 
 				exit({set_sockopt, Reason})
 	  end,
 
     {ok, Pid} = converse:start_tcp_client(RecFun),
     gen_tcp:controlling_process(CliSocket, Pid),
-    Module:set_socket(Pid, CliSocket),
+    tcp_app_fsm:set_socket(Pid, CliSocket),
 
     %% Signal the network driver that we are ready to accept another connection
     case prim_inet:async_accept(ListSock, -1) of
@@ -122,18 +120,18 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 				exit({async_accept, inet:format_error(NewRef)})
 		end,
 
-		{noreply, State#state{acceptor=NewRef}}
+		{noreply, State#state{tcp_acceptor=NewRef}}
 	catch exit:Why ->
 		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
 		{stop, Why, State}
 	end;
 
-handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, acceptor=Ref} = State) ->
-	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
+handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, tcp_acceptor=Ref} = State) ->
+	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{stop, Error, State};
 
 handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
-	error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
+	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{noreply, State};
 
 handle_info({change_receiver, Fun}, #state{receive_function=RecFun} = State) ->

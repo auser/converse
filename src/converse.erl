@@ -6,7 +6,7 @@
 -behaviour(application).
 
 %% Internal API
--export([start_tcp_client/1]).
+-export([start_tcp_client/1, start_udp_client/1]).
 -export ([open_and_send/2, send_to_open/2]).
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
@@ -29,8 +29,9 @@ send_to_open(Socket, Data) ->
 	gen_tcp:send(Socket, converse_packet:encode(Data)),
 	{ok, Socket}.
 
-%% A startup function for spawning new client connection handling FSM.
-%% To be called by the TCP listener process.
+start_udp_client(Fun) ->
+	supervisor:start_child(udp_client_sup, []).
+	
 start_tcp_client(Fun) -> 
 	_ChildSpec = [{undefined,{tcp_app_fsm,start_link,[Fun]},temporary,2000,worker,[]}],
 	supervisor:start_child(tcp_client_sup, []).
@@ -40,7 +41,8 @@ start_tcp_client(Fun) ->
 %%----------------------------------------------------------------------
 start(_Type, Config) ->
 		application:start(crypto),
-    supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, [Config]),
+		supervisor:start_link({local, ?MODULE}, ?MODULE, [Config]).
 
 stop(_S) ->
     ok.
@@ -48,14 +50,13 @@ stop(_S) ->
 %%----------------------------------------------------------------------
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
-init([Module, Config]) ->
-	?TRACE("In init([]) for converse.erl", [Module, Config]),
+init([Config]) ->
     {ok,
         {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
               % TCP Listener
               {   tcp_server,                          % Id       = internal id
-                  {converse_listener,start_link,[Module,Config]}, % StartFun = {M, F, A}
+                  {converse_listener,start_link,[Config]}, % StartFun = {M, F, A}
                   permanent,                               % Restart  = permanent | transient | temporary
                   2000,                                    % Shutdown = brutal_kill | int() >= 0 | infinity
                   worker,                                  % Type     = worker | supervisor
@@ -63,17 +64,24 @@ init([Module, Config]) ->
               }
               % Client instance supervisor
               ,{  tcp_client,
-                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [client, Module, Config]]},
+                  {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [tcp_app_fsm, Config]]},
                   permanent,                               % Restart  = permanent | transient | temporary
                   infinity,                                % Shutdown = brutal_kill | int() >= 0 | infinity
                   supervisor,                              % Type     = worker | supervisor
                   []                                       % Modules  = [Module] | dynamic
               }
+              % ,{  udp_client,
+              %     {supervisor,start_link,[{local, udp_client_sup}, ?MODULE, [udp_app_fsm, Config]]},
+              %     permanent,                               % Restart  = permanent | transient | temporary
+              %     infinity,                                % Shutdown = brutal_kill | int() >= 0 | infinity
+              %     supervisor,                              % Type     = worker | supervisor
+              %     []                                       % Modules  = [Module] | dynamic
+              % }
             ]
         }
     };
 
-init([client, Module, Config]) ->
+init([Module, Config]) ->
     {ok,
         {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
             [
