@@ -154,7 +154,7 @@ handle_info({bounce, Sock, Msg}, StateName, #state{socket=S, receiver=Acceptor,a
 	end,
 	{next_state, StateName, State};
 
-handle_info(Info, StateName, StateData) ->
+handle_info(Info, StateName, State) ->
 	?TRACE("Received info", Info),
 	{next_state, StateName, State}.
 
