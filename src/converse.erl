@@ -18,6 +18,7 @@
 open_and_send({Address, Port}, Data) ->
 	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
 		{ok, Socket} ->
+			send_to_open(Socket, {keyreq}),
 			send_to_open(Socket, Data),
 			{ok, Socket};
 		{error, Reason} ->
