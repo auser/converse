@@ -143,6 +143,17 @@ handle_info({tcp_closed, Socket}, _StateName,
     error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
     {stop, normal, StateData};
 
+handle_info({bounce, Sock, Msg}, #state{config = Config} = State) ->
+	io:format("Bouncing message back to ourselves ~p~n", [Msg]),
+	Receiver = case Fun of
+		{} -> undefined;
+		_ -> 
+			AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
+			Response = AcceptHandler ! {data, S, DataToSend},
+			io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
+	end,
+	{noreply, StateName, State};
+
 handle_info(Info, StateName, StateData) ->
 	?TRACE("Received info", Info),
 	{noreply, StateName, StateData}.

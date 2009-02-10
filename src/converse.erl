@@ -20,7 +20,7 @@ open_and_send({Address, Port}, Data) ->
 		{ok, Socket} ->			
 			send_to_open(Socket, {keyreq}),
 			receive
-				{keyset, _Key, _Salt} ->
+				{tcp, Socket, Msg} ->
 					send_to_open(Socket, Data),
 					{ok, Socket};
 				Anything ->

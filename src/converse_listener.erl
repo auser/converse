@@ -12,6 +12,7 @@
 -record(state, {
                 listener,
                 tcp_acceptor, 
+								config,
 								% udp_acceptor,
 								receive_function
                }).
@@ -56,6 +57,7 @@ init([Config]) ->
 				?TRACE("Listening on port with Opts", [Port, ReceiveFunction, Opts]),
         {ok, #state{listener = Sock,
                     tcp_acceptor = Ref,
+										config = Config,
 										% udp_acceptor = UdpAcceptor,
 										receive_function=ReceiveFunction}};
     {error, Reason} ->
@@ -139,7 +141,7 @@ handle_info({change_receiver, Fun}, #state{receive_function=RecFun} = State) ->
 	end,
 	?TRACE("Changed receive function to ~p.\n", [NewState]),
 	{noreply, NewState};
-		
+
 handle_info(Info, State) ->
 	?TRACE("Received info", [Info]),
   {noreply, State}.
