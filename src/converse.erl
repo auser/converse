@@ -24,8 +24,8 @@ open_and_send({Address, Port}, Data) ->
 					io:format("Error in initiating call: ~p~n", [Reason]),
 					{error, Reason};
 				_Anything ->
-					send_to_open(Socket, Data);
-			end,			
+					send_to_open(Socket, Data)
+			end;
 		{error, Reason} -> {error, Reason}
 	end.
 
