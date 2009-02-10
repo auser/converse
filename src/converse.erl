@@ -16,26 +16,32 @@
 % 	converse:start(normal, Config).
 	
 open_and_send({Address, Port}, Data) ->
-	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
+	case open_socket({Address, Port}) of
 		{ok, Socket} ->			
 			send_to_open(Socket, {keyreq}),
 			send_to_open(Socket, Data);
-			% receive
-			% 	{tcp, Socket, Msg} ->
-			% 		,
-			% 		{ok, Socket};
-			% 	Anything ->
-			% 		io:format("Received ~p~n", [Anything]),
-			% 		{error, Anything}
-			% end;
-		{error, Reason} ->
-			io:format("Error ~p~n", [Reason]),
-			{error, Reason}
+		{error, Reason} -> {error, Reason}
+	end.
+
+echo({Address, Port}) ->
+	case open_socket({Address, Port}) of
+		{ok, Socket} ->			
+			send_to_open(Socket, {echo}),
+		{error, Reason} -> {error, Reason}
 	end.
 
 send_to_open(Socket, Data) ->
 	gen_tcp:send(Socket, converse_packet:encode(Data)),
 	{ok, Socket}.
+
+open_socket({Address, Port}) ->
+	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
+		{error, Reason} ->
+			io:format("Error ~p~n", [Reason]),
+			{error, Reason};
+		Anything ->
+			{ok, Socket}
+	end.
 
 start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).

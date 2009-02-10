@@ -16,6 +16,7 @@ layers:start().
 ==
 layers:start([converse, whisper, test_app], [{port, 1234}]).
 converse:open_and_send({{0,0,0,0}, 1234}, {data, whisper:encrypt("hi")}).
+
 {ok, Sock} = converse:open_and_send({{0,0,0,0}, 1234}, {data, whisper:encrypt("hi")}).
 converse:send_to_open(Sock, {data, "yo"}).
 
