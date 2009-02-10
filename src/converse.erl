@@ -8,6 +8,7 @@
 %% Internal API
 -export([start_tcp_client/1, start_udp_client/1]).
 -export ([open_and_send/2, send_to_open/2]).
+-export ([echo/0]).
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
