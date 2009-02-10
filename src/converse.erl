@@ -17,7 +17,7 @@
 % 	converse:start(normal, Config).
 	
 open_and_send({Address, Port}, Data) ->
-	case open_socket({Address, Port}) of
+	case converse_listener:open_socket({Address, Port}) of
 		{ok, Socket} ->
 			case send_to_open(Socket, {keyreq}) of
 				{error, Reason} ->
@@ -30,7 +30,7 @@ open_and_send({Address, Port}, Data) ->
 	end.
 
 echo({Address, Port}) ->
-	case open_socket({Address, Port}) of
+	case converse_listener:open_socket({Address, Port}) of
 		{ok, Socket} ->			
 			send_to_open(Socket, {echo, "echo"});
 		{error, Reason} -> {error, Reason}
@@ -39,15 +39,6 @@ echo({Address, Port}) ->
 send_to_open(Socket, Data) ->
 	gen_tcp:send(Socket, converse_packet:encode(Data)),
 	{ok, Socket}.
-
-open_socket({Address, Port}) ->
-	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
-		{error, Reason} ->
-			io:format("Error ~p~n", [Reason]),
-			{error, Reason};
-		{ok, Socket} ->
-			{ok, Socket}
-	end.
 
 start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).

@@ -24,7 +24,7 @@
 %% @end
 %%----------------------------------------------------------------------
 start_link(Config) ->	
-	gen_server:start_link(?MODULE, [Config], []).
+	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -76,6 +76,20 @@ init([Config]) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------
+handle_call({send, {Address, Port}, Msg}, _From, State) ->
+	case open_socket({Address, Port}) of
+		{ok, Socket} ->
+			case send_to_open(Socket, {keyreq}) of
+				{error, Reason} ->
+					io:format("Error in initiating call: ~p~n", [Reason]),
+					{error, Reason};
+				_Anything ->
+					send_to_open(Socket, Data)
+			end;
+		{error, Reason} -> {error, Reason}
+	end,
+	{reply, ok, State};
+	
 handle_call(Request, _From, State) ->
     {stop, {unknown_call, Request}, State}.
 
@@ -182,3 +196,12 @@ set_sockopt(ListSock, CliSocket) ->
     Error ->
         gen_tcp:close(CliSocket), Error
     end.
+
+open_socket({Address, Port}) ->
+	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
+		{error, Reason} ->
+			io:format("Error ~p~n", [Reason]),
+			{error, Reason};
+		{ok, Socket} ->
+			{ok, Socket}
+	end.
