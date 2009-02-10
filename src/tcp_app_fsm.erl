@@ -150,7 +150,7 @@ handle_info({bounce, Sock, Msg}, #state{config = Config} = State) ->
 		_ -> 
 			AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
 			Response = AcceptHandler ! {data, S, DataToSend},
-			io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
+			io:format("Received data ~p from ~p~n", [Response, AcceptHandler])
 	end,
 	{noreply, StateName, State};
 
