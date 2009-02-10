@@ -19,14 +19,15 @@ open_and_send({Address, Port}, Data) ->
 	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
 		{ok, Socket} ->			
 			send_to_open(Socket, {keyreq}),
-			receive
-				{tcp, Socket, Msg} ->
-					send_to_open(Socket, Data),
-					{ok, Socket};
-				Anything ->
-					io:format("Received ~p~n", [Anything]),
-					{error, Anything}
-			end;
+			send_to_open(Socket, Data);
+			% receive
+			% 	{tcp, Socket, Msg} ->
+			% 		,
+			% 		{ok, Socket};
+			% 	Anything ->
+			% 		io:format("Received ~p~n", [Anything]),
+			% 		{error, Anything}
+			% end;
 		{error, Reason} ->
 			io:format("Error ~p~n", [Reason]),
 			{error, Reason}

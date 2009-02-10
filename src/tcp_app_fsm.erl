@@ -152,11 +152,11 @@ handle_info({bounce, Sock, Msg}, StateName, #state{socket=S, receiver=Acceptor,a
 			Response = AcceptHandler ! {data, S, Msg},
 			io:format("Received data ~p from ~p~n", [Response, AcceptHandler])
 	end,
-	{noreply, StateName, State};
+	{next_state, StateName, State};
 
 handle_info(Info, StateName, StateData) ->
 	?TRACE("Received info", Info),
-	{noreply, StateName, StateData}.
+	{next_state, StateName, State}.
 
 %%-------------------------------------------------------------------------
 %% Func: terminate/3
