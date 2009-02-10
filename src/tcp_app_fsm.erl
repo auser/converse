@@ -56,7 +56,10 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 init([Config]) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
-	Receiver = converse_utils:running_receiver(undefined, Fun),
+	Receiver = case Fun of
+		{} -> undefined;
+		_ -> whisper_utils:running_receiver(undefined, Fun)
+	end,
 	?TRACE("In init tcp_app_fsm", []),
 	{ok, socket, #state{receiver=Receiver,accept_fun=Fun}}.
 
@@ -81,11 +84,15 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
-	Response = AcceptHandler ! {data, S, DataToSend},
-	io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
-	% ?TRACE("Sent data", [DataToSend]),
-	{next_state, data, State#state{receiver = AcceptHandler}};
+	Receiver = case Fun of
+		{} -> 
+			{next_state, data, State};
+		_ -> 
+			AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
+			Response = AcceptHandler ! {data, S, DataToSend},
+			io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
+			{next_state, data, State#state{receiver = AcceptHandler}}
+	end;	
 
 data(timeout, State) ->
 	error_logger:error_msg("~p Connection timeout - closing.\n", [self()]),

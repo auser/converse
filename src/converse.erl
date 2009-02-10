@@ -18,8 +18,12 @@
 open_and_send({Address, Port}, Data) ->
 	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
 		{ok, Socket} ->
-			send_to_open(Socket, {keyreq}),
-			send_to_open(Socket, Data),
+			case send_to_open(Socket, {keyreq}) of
+				{keyset, _, _} -> send_to_open(Socket, Data);
+				Anything ->
+					io:format("Error ~p~n", [Anything]),
+					{error, Anything}
+			end,
 			{ok, Socket};
 		{error, Reason} ->
 			io:format("Error ~p~n", [Reason]),
