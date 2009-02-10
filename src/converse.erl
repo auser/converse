@@ -20,14 +20,11 @@ open_and_send({Address, Port}, Data) ->
 		{ok, Socket} ->			
 			send_to_open(Socket, {keyreq}),
 			receive
-				{ok, Port} ->
-					send_to_open(Socket, Data),
-					{ok, Socket};
 				{keyset, _Key, _Salt} ->
 					send_to_open(Socket, Data),
 					{ok, Socket};
 				Anything ->
-					io:format("Error ~p~n", [Anything]),
+					io:format("Received ~p~n", [Anything]),
 					{error, Anything}
 			end;
 		{error, Reason} ->
