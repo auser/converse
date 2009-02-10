@@ -18,16 +18,21 @@
 	
 open_and_send({Address, Port}, Data) ->
 	case open_socket({Address, Port}) of
-		{ok, Socket} ->			
-			send_to_open(Socket, {keyreq}),
-			send_to_open(Socket, Data);
+		{ok, Socket} ->
+			case send_to_open(Socket, {keyreq}) of
+				{error, Reason} ->
+					io:format("Error in initiating call: ~p~n", [Reason]),
+					{error, Reason};
+				_Anything ->
+					send_to_open(Socket, Data);
+			end,			
 		{error, Reason} -> {error, Reason}
 	end.
 
 echo({Address, Port}) ->
 	case open_socket({Address, Port}) of
 		{ok, Socket} ->			
-			send_to_open(Socket, {echo});
+			send_to_open(Socket, {echo, "echo"});
 		{error, Reason} -> {error, Reason}
 	end.
 
