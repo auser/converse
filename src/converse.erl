@@ -8,7 +8,7 @@
 %% Internal API
 -export([start_tcp_client/1, start_udp_client/1]).
 -export ([open_and_send/2, send_to_open/2]).
--export ([echo/0]).
+-export ([echo/1]).
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
@@ -27,7 +27,7 @@ open_and_send({Address, Port}, Data) ->
 echo({Address, Port}) ->
 	case open_socket({Address, Port}) of
 		{ok, Socket} ->			
-			send_to_open(Socket, {echo}),
+			send_to_open(Socket, {echo});
 		{error, Reason} -> {error, Reason}
 	end.
 
@@ -40,7 +40,7 @@ open_socket({Address, Port}) ->
 		{error, Reason} ->
 			io:format("Error ~p~n", [Reason]),
 			{error, Reason};
-		Anything ->
+		{ok, Socket} ->
 			{ok, Socket}
 	end.
 
