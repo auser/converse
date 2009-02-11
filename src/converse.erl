@@ -9,36 +9,48 @@
 -export([start_tcp_client/1, start_udp_client/1]).
 -export ([open_and_send/2, send_to_open/2]).
 -export ([echo/1]).
+-export ([layers_receive/1]).
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
+-define (LISTENER, erlang:whereis(converse_listener)).
 %% API
 % start_link(Config) ->
 % 	converse:start(normal, Config).
-	
-open_and_send({Address, Port}, Data) ->
-	case converse_listener:open_socket({Address, Port}) of
-		{ok, Socket} ->
-			case send_to_open(Socket, {keyreq}) of
-				{error, Reason} ->
-					io:format("Error in initiating call: ~p~n", [Reason]),
-					{error, Reason};
-				_Anything ->
-					send_to_open(Socket, Data)
-			end;
-		{error, Reason} -> {error, Reason}
-	end.
-
-echo({Address, Port}) ->
-	case converse_listener:open_socket({Address, Port}) of
-		{ok, Socket} ->			
-			send_to_open(Socket, {echo, "echo"});
-		{error, Reason} -> {error, Reason}
-	end.
+open_and_send(Address, Data) ->
+	converse_listener:send(Address, Data).
 
 send_to_open(Socket, Data) ->
-	gen_tcp:send(Socket, converse_packet:encode(Data)),
-	{ok, Socket}.
+	converse_listener:send_to_open(Socket, Data).
+
+layers_receive(From) ->
+	receive
+		Anything -> 
+			io:format("Received ~p~n", [Anything]),
+			layers_receive(From)
+	end.
+
+echo(Address) ->
+	ok.
+% echo({Address, Port}) ->
+% 	case open_socket({Address, Port}) of
+% 		{ok, Socket} ->			
+% 			send_to_open(Socket, {echo, "echo"});
+% 		{error, Reason} -> {error, Reason}
+% 	end.
+% 
+% send_to_open(Socket, Data) ->
+% 	gen_tcp:send(Socket, converse_packet:encode(Data)),
+% 	{ok, Socket}.
+% 
+% open_socket({Address, Port}) ->
+% 	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
+% 		{error, Reason} ->
+% 			io:format("Error ~p~n", [Reason]),
+% 			{error, Reason};
+% 		{ok, Socket} ->
+% 			{ok, Socket}
+% 	end.
 
 start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).

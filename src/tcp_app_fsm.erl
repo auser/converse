@@ -57,8 +57,8 @@ init([Config]) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
 	Receiver = case Fun of
-		{} -> undefined;
-		_ -> whisper_utils:running_receiver(undefined, Fun)
+		nil -> undefined;
+		_ -> converse_utils:running_receiver(undefined, Fun)
 	end,
 	?TRACE("In init tcp_app_fsm", []),
 	{ok, socket, #state{receiver=Receiver,accept_fun=Fun}}.
@@ -84,15 +84,11 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	Receiver = case Fun of
-		{} -> 
-			{next_state, data, State};
-		_ -> 
-			AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
-			Response = AcceptHandler ! {data, S, DataToSend},
-			io:format("Received data ~p from ~p~n", [Response, AcceptHandler]),
-			{next_state, data, State#state{receiver = AcceptHandler}}
-	end;	
+	Self = self(),
+	Pid = converse_utils:running_receiver(Acceptor, Fun),
+	Response = Pid ! {data, DataToSend},
+	io:format("Received data ~p from ~p~n", [Response, Pid]),
+	{next_state, data, State#state{receiver = Pid}};
 
 data(timeout, State) ->
 	error_logger:error_msg("~p Connection timeout - closing.\n", [self()]),
@@ -135,7 +131,6 @@ handle_sync_event(Event, _From, StateName, StateData) ->
 handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = State) ->
 	% Flow control: enable forwarding of next TCP message
 	inet:setopts(Socket, [{active, once}]),
-	?TRACE("handing info new tcp socket", [Socket, State, Bin]),
 	?MODULE:StateName({data, Bin}, State);
 
 handle_info({tcp_closed, Socket}, _StateName,
@@ -144,7 +139,7 @@ handle_info({tcp_closed, Socket}, _StateName,
     {stop, normal, StateData};
 
 handle_info({bounce, Sock, Msg}, StateName, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
-	io:format("Bouncing message back to ourselves ~p~n", [Msg]),
+	io:format("Bouncing message back to the stack ~p~n", [Msg]),
 	Receiver = case Fun of
 		{} -> undefined;
 		_ -> 
@@ -176,3 +171,13 @@ terminate(_Reason, _StateName, #state{socket=Socket}) ->
 %%-------------------------------------------------------------------------
 code_change(_OldVsn, StateName, StateData, _Extra) ->
     {ok, StateName, StateData}.
+
+get_function(Fun) ->
+	case Fun of
+		nil -> nil;
+		FoundRecFun -> 
+			RFun = case FoundRecFun of
+				undefined -> self();
+				F -> F
+			end
+	end.

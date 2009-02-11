@@ -1,21 +1,14 @@
 -module (converse_listener).
 -include ("converse.hrl").
+-include ("converse_listener.hrl").
 -behaviour(gen_server).
 
 %% External API
 -export([start_link/1]).
-
+-export ([send/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
-
--record(state, {
-                listener,
-                tcp_acceptor, 
-								config,
-								% udp_acceptor,
-								receive_function
-               }).
 
 %%--------------------------------------------------------------------
 %% @spec (Port::integer(), Module) -> {ok, Pid} | {error, Reason}
@@ -25,7 +18,13 @@
 %%----------------------------------------------------------------------
 start_link(Config) ->	
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+	
+send(Address, Msg) ->
+	gen_server:call(?MODULE, {send, Address, Msg}).
 
+send_to_open(Socket, Msg) ->
+	gen_server:call(?MODULE, {send_to_open, Socket, Msg}).
+	
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%------------------------------------------------------------------------
@@ -43,9 +42,11 @@ start_link(Config) ->
 init([Config]) ->
     process_flag(trap_exit, true),
 		
-		DefaultPort = converse_utils:safe_integer(config:parse(port, Config)),		
-		ReceiveFunction = config:parse(successor, Config),
-		Port = converse_utils:get_app_env(listen_port, DefaultPort),
+		ReceiveFunction = case config:parse(successor, Config) of
+			{} -> undefined;
+			M -> M
+		end,
+		Port = converse_utils:safe_integer(converse_utils:get_app_env(port, Config, ?DEFAULT_PORT)),
 
     Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
 		?TRACE("Starting converse_listener with config ~p~n", [Config]),
@@ -54,12 +55,10 @@ init([Config]) ->
     {ok, Sock} ->
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(Sock, -1),
-				?TRACE("Listening on port with Opts", [Port, ReceiveFunction, Opts]),
-        {ok, #state{listener = Sock,
+        {ok, #state{listener_socket = Sock,
                     tcp_acceptor = Ref,
-										config = Config,
-										% udp_acceptor = UdpAcceptor,
-										receive_function=ReceiveFunction}};
+										port = Port,
+										layers_receive = ReceiveFunction}};
     {error, Reason} ->
         {stop, Reason}
     end.
@@ -75,20 +74,21 @@ init([Config]) ->
 %%      is returned, the server is stopped and `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------
-handle_call({send, {Address, Port}, Msg}, _From, State) ->
+%%-------------------------------------------------------------------------	
+handle_call({send, Address, Msg}, _From, #state{port=Port,listener_socket=ListSock,tcp_acceptor=Ref} = State) ->
+	io:format("Sending message ~p to ~p~n", [Msg, Address]),
 	case open_socket({Address, Port}) of
 		{ok, Socket} ->
-			case send_to_open(Socket, {keyreq}) of
-				{error, Reason} ->
-					io:format("Error in initiating call: ~p~n", [Reason]),
-					{error, Reason};
-				_Anything ->
-					send_to_open(Socket, Data)
-			end;
-		{error, Reason} -> {error, Reason}
-	end,
-	{reply, ok, State};
+			gen_tcp:send(Socket, converse_packet:encode(Msg)),
+			{reply, {ok, Socket}, State};
+		{error, Reason} ->
+			io:format("Error sending message ~p~n", [Reason]),
+			{reply, {error, Reason}, State}
+	end;
+
+handle_call({send_to_open, Socket, Msg}, _From, State) ->
+	gen_tcp:send(Socket, converse_packet:encode(Msg)),
+	{reply, {ok, Socket}, State};
 	
 handle_call(Request, _From, State) ->
     {stop, {unknown_call, Request}, State}.
@@ -115,8 +115,18 @@ handle_cast(_Msg, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------	
+handle_info({bounce, Msg}, #state{layers_receive=Fun} = State) ->
+	io:format("Received bounce request ~p~n", [Msg]),
+	Receiver = case Fun of
+		{} -> undefined;
+		_ -> 
+			AcceptHandler = converse_utils:running_receiver(undefined, Fun),
+			AcceptHandler ! {data, Msg}			
+	end,
+	{noreply, State};
+	
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
-            #state{listener=ListSock, receive_function=RecFun, tcp_acceptor=Ref} = State) ->
+            #state{listener_socket=ListSock, layers_receive=RecFun, tcp_acceptor=Ref} = State) ->
 	try
 		case set_sockopt(ListSock, CliSocket) of
 			ok -> ok;
@@ -140,7 +150,7 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 		{stop, Why, State}
 	end;
 
-handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, tcp_acceptor=Ref} = State) ->
+handle_info({inet_async, ListSock, Ref, Error}, #state{listener_socket=ListSock, tcp_acceptor=Ref} = State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{stop, Error, State};
 
@@ -148,9 +158,10 @@ handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{noreply, State};
 
-handle_info({change_receiver, Fun}, #state{receive_function=RecFun} = State) ->
+% NOT IMPLEMENTED YET
+handle_info({change_receiver, Fun}, #state{layers_receive=RecFun} = State) ->
 	NewState = case RecFun =:= Fun of
-		false -> State#state{receive_function=Fun};
+		false -> State#state{layers_receive=Fun};
 		true -> State
 	end,
 	?TRACE("Changed receive function to ~p.\n", [NewState]),
@@ -169,7 +180,7 @@ handle_info(Info, State) ->
 %% @private
 %%-------------------------------------------------------------------------
 terminate(_Reason, State) ->
-    gen_tcp:close(State#state.listener),
+    gen_tcp:close(State#state.listener_socket),
     ok.
 
 %%-------------------------------------------------------------------------

@@ -1,11 +1,11 @@
-{application, tcp_server,
+{application, converse,
  [
-  {description, "Demo TCP server"},
+  {description, "Converse server"},
   {vsn, "1.0"},
-  {id, "tcp_server"},
+  {id, "converse"},
   {modules,      [converse_listener, tcp_app_fsm]},
   {registered,   [tcp_server_sup, converse_listener]},
-  {applications, [kernel, stdlib]},
+  {applications, [kernel, stdlib, sasl]},
   %%
   %% mod: Specify the module name to start the application, plus args
   %%

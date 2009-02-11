@@ -23,9 +23,15 @@ converse:open_and_send({{10,45,10,62}, 1234}, {data, whisper:encrypt("hi")}).
 {ok, Sock} = converse:open_and_send({{0,0,0,0}, 1234}, {data, whisper:encrypt("hi")}).
 converse:send_to_open(Sock, {data, "yo"}).
 
-converse:start(normal, [{receive_function, [test_app,receive_function]}, {port, 1235}]).
+converse:start(normal, [{layers_receive, [test_app,layers_receive]}, {port, 1235}]).
 {ok, Sock} = converse:open_and_send({{0,0,0,0}, 1235}, {data, "hi"}).
 converse:send_to_open(Sock, {data, "yo"}).
 
 {ok, Socket} = gen_udp:open(0, [binary]).
 ok = gen_udp:send(Socket, {0,0,0,0}, 1235, <<"hi">>).
+
+f(S),{ok, S} = gen_tcp:connect({0,0,0,0}, 8021, [{packet, 2}]).
+gen_tcp:send(S, <<"hello">>).
+
+converse:start(normal, [{successor, [converse]}, {port, 1235}]).
+converse:open_and_send({0,0,0,0}, {data, "hi"}).

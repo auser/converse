@@ -41,14 +41,19 @@ parse_args0(Array, Acc) ->
 	end.
 
 % Get the environment
-get_app_env(Opt, Default) ->
+get_app_env(Opt, Config, Default) ->
     case application:get_env(application:get_application(), Opt) of
     {ok, Val} -> Val;
     _ ->
-        case init:get_argument(Opt) of
-        [[Val | _]] -> Val;
-        error       -> Default
-        end
+			case init:get_argument(Opt) of
+				[[Val|_]] ->
+					Val;
+				_Anything ->
+					case config:parse(Opt, Config) of
+						nil -> Default;
+						Retriveved -> Retriveved
+					end
+			end
     end.
 
 running_receiver(undefined, Fun) ->
@@ -63,7 +68,17 @@ running_receiver(Pid, Fun) when is_pid(Pid) ->
 run_fun(Fun) ->
 	case length(Fun) of
 		2 -> [M,F] = Fun;
-		1 -> [M] = Fun, F = receive_function
+		1 -> [M] = Fun, F = layers_receive
 	end,
 	A = [self()],
 	proc_lib:spawn_link(M,F,A).
+	
+get_function(Fun) ->
+	case Fun of
+		nil -> nil;
+		FoundRecFun -> 
+			RFun = case FoundRecFun of
+				undefined -> self();
+				F -> F
+			end
+	end.
