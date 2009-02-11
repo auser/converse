@@ -23,6 +23,7 @@ open_and_send(Address, Data) ->
 send_to_open(Socket, Data) ->
 	converse_listener:send_to_open(Socket, Data).
 
+% Only used for testing
 layers_receive(From) ->
 	receive
 		Anything -> 
