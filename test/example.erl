@@ -35,3 +35,6 @@ gen_tcp:send(S, <<"hello">>).
 
 converse:start(normal, [{successor, [converse]}, {port, 1235}]).
 converse:open_and_send({0,0,0,0}, {data, "hi"}).
+
+layers:start([converse, whisper, test_app], [{port, 22001}]).
+converse:open_and_send({97,94,97,10}, {data, "hi"}).
