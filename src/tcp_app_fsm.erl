@@ -65,11 +65,7 @@ layers_receive() ->
 init(Config) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
-	Successor = case Fun of
-		nil -> [?MODULE, layers_receive, []];
-		Fun -> Fun
-	end,
-	{ok, socket, #state{successor_mfa=Successor}}.
+	{ok, socket, #state{successor_mfa=Fun}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
