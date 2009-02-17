@@ -44,11 +44,7 @@ init([Config]) ->
 		io:format("Started converse_listener with ~p~n", [Config]),
     process_flag(trap_exit, true),
 				
-		Successor = case config:parse(successor, Config) of
-			nil -> [?MODULE, layers_receive, []];
-			Fun -> Fun
-		end,
-		
+		Successor = config:parse(successor, Config),		
 		Port = converse_utils:safe_integer(converse_utils:get_app_env(port, Config, ?DEFAULT_PORT)),
 
     Opts = [binary, {packet, raw}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
