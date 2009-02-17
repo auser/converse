@@ -69,7 +69,6 @@ init(Config) ->
 		nil -> [?MODULE, layers_receive, []];
 		Fun -> Fun
 	end,
-	?TRACE("In init tcp_app_fsm", []),
 	{ok, socket, #state{successor_mfa=Successor}}.
 
 %%-------------------------------------------------------------------------

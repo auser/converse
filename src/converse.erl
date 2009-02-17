@@ -27,7 +27,6 @@ start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).
 	
 start_tcp_client(Config) -> 	
-	?TRACE("Starting tcp client with ~p~n", [Config]),
 	% Ip = tcp_host({0,0,0,0}),
 	% Port = list_to_atom(integer_to_list(config:parse(port, Config))),
 	% Name = erlang:list_to_atom(lists:flatten(io_lib:format("~p_~p_~p", [converse_listener, Ip, Port]))),
