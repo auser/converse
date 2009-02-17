@@ -55,30 +55,3 @@ get_app_env(Opt, Config, Default) ->
 					end
 			end
     end.
-
-running_receiver(undefined, Fun) ->
-		run_fun(Fun);
-
-running_receiver(Pid, Fun) when is_pid(Pid) ->
-	case is_process_alive(Pid) of
-		true -> Pid;
-		false ->run_fun(Fun)
-	end.
-
-run_fun(Fun) ->
-	case length(Fun) of
-		2 -> [M,F] = Fun;
-		1 -> [M] = Fun, F = layers_receive
-	end,
-	A = [self()],
-	proc_lib:spawn_link(M,F,A).
-	
-get_function(Fun) ->
-	case Fun of
-		nil -> nil;
-		FoundRecFun -> 
-			RFun = case FoundRecFun of
-				undefined -> self();
-				F -> F
-			end
-	end.

@@ -1,5 +1,7 @@
 -include_lib("kernel/include/inet.hrl").
 
+-define(APPLICATIONS_TO_START, [sasl, os_mon]).
+
 -define (debug, true).
 
 -define (MAX_CONN, 200).

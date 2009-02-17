@@ -17,8 +17,7 @@
 -record(state, {
                 socket,    			% client socket
                 addr,       		% client address
-								accept_fun,			% server accept function
-								receiver 	% server accept hander
+								successor_mfa		% server accept function
                }).
 
 
@@ -53,15 +52,15 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([Config]) ->
+init(Config) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
-	Receiver = case Fun of
-		nil -> undefined;
-		_ -> converse_utils:running_receiver(undefined, Fun)
+	Successor = case Fun of
+		nil -> [?MODULE, layers_receive, []];
+		Fun -> Fun
 	end,
 	?TRACE("In init tcp_app_fsm", []),
-	{ok, socket, #state{receiver=Receiver,accept_fun=Fun}}.
+	{ok, socket, #state{successor_mfa=Successor}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -82,13 +81,11 @@ socket(Other, State) ->
 	{next_state, socket, State}.
 
 %% Notification event coming from client
-data({data, Data}, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
+data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	Self = self(),
-	Pid = converse_utils:running_receiver(Acceptor, Fun),
-	Response = Pid ! {data, DataToSend},
-	io:format("Received data ~p from ~p~n", [Response, Pid]),
-	{next_state, data, State#state{receiver = Pid}};
+	layers:pass(Fun, Data),
+	?TRACE("Received data ~p from ~p~n", [Data, Ip]),
+	{next_state, data, State};
 
 data(timeout, State) ->
 	error_logger:error_msg("~p Connection timeout - closing.\n", [self()]),
@@ -137,17 +134,6 @@ handle_info({tcp_closed, Socket}, _StateName,
             #state{socket=Socket, addr=Addr} = StateData) ->
     error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
     {stop, normal, StateData};
-
-handle_info({bounce, Sock, Msg}, StateName, #state{socket=S, receiver=Acceptor,accept_fun = Fun} = State) ->
-	io:format("Bouncing message back to the stack ~p~n", [Msg]),
-	Receiver = case Fun of
-		{} -> undefined;
-		_ -> 
-			AcceptHandler = converse_utils:running_receiver(Acceptor, Fun),
-			Response = AcceptHandler ! {data, S, Msg},
-			io:format("Received data ~p from ~p~n", [Response, AcceptHandler])
-	end,
-	{next_state, StateName, State};
 
 handle_info(Info, StateName, State) ->
 	?TRACE("Received info", Info),
