@@ -62,12 +62,11 @@ layers_receive() ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init(Config) ->
+init([Config]) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
-	io:format("fun in tcp_app_fsm: ~p~n", [Fun]),
 	Successor = case Fun of
-		[nil] -> [?MODULE, layers_receive, []];
+		nil -> [?MODULE, layers_receive, []];
 		Fun -> Fun
 	end,
 	{ok, socket, #state{successor_mfa=Successor}}.
