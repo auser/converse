@@ -65,6 +65,7 @@ layers_receive() ->
 init(Config) ->
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
+	io:format("fun in tcp_app_fsm: ~p~n", [Fun]),
 	Successor = case Fun of
 		[nil] -> [?MODULE, layers_receive, []];
 		Fun -> Fun
