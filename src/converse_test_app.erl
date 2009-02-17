@@ -1,4 +1,4 @@
--module (test_app).
+-module (converse_test_app).
 -compile(export_all).
 
 layers_receive() ->
