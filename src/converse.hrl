@@ -1,5 +1,7 @@
 -include_lib("kernel/include/inet.hrl").
 
+-define(APPLICATIONS_TO_START, [sasl, os_mon]).
+
 -define (debug, true).
 
 -define (MAX_CONN, 200).
@@ -7,7 +9,7 @@
 -define (MAX_DELAY_TIME, 60).
 
 -define (TIMES_TO_RETRY, 3).
--define (TIMEOUT, 100000).
+-define (TIMEOUT, 50000).
 -define (DEFAULT_PORT, 8021).
 
 -define (DEFAULT_CONFIG, [

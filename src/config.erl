@@ -26,5 +26,7 @@ get(Key, Arr) ->
 		[Val] ->
 			element(2, Val);
 		[_Val|Vals] ->
-			get(Key, Vals)
+			get(Key, Vals);
+		Else ->
+			Else
 	end.

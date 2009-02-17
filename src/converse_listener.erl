@@ -1,11 +1,18 @@
 -module (converse_listener).
 -include ("converse.hrl").
--include ("converse_listener.hrl").
+
 -behaviour(gen_server).
+
+-record(state, {
+                socket,
+								port,
+								tcp_acceptor,
+                successor_mfa,
+								config
+               }).
 
 %% External API
 -export([start_link/1]).
--export ([send/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
@@ -18,13 +25,7 @@
 %%----------------------------------------------------------------------
 start_link(Config) ->	
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
-	
-send(Address, Msg) ->
-	gen_server:call(?MODULE, {send, Address, Msg}).
-
-send_to_open(Socket, Msg) ->
-	gen_server:call(?MODULE, {send_to_open, Socket, Msg}).
-	
+		
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%------------------------------------------------------------------------
@@ -40,25 +41,28 @@ send_to_open(Socket, Msg) ->
 %% @end
 %%----------------------------------------------------------------------
 init([Config]) ->
+		io:format("Started converse_listener with ~p~n", [Config]),
     process_flag(trap_exit, true),
-		
-		ReceiveFunction = case config:parse(successor, Config) of
-			{} -> undefined;
-			M -> M
+				
+		Successor = case config:parse(successor, Config) of
+			nil -> [?MODULE, layers_receive, []];
+			Fun -> Fun
 		end,
+		
 		Port = converse_utils:safe_integer(converse_utils:get_app_env(port, Config, ?DEFAULT_PORT)),
 
-    Opts = [binary, {packet, 2}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
+    Opts = [binary, {packet, raw}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
 		?TRACE("Starting converse_listener with config ~p~n", [Config]),
 				
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(Sock, -1),
-        {ok, #state{listener_socket = Sock,
-                    tcp_acceptor = Ref,
-										port = Port,
-										layers_receive = ReceiveFunction}};
+        {ok, #state{socket = Sock,
+										tcp_acceptor = Ref,
+										config = Config,
+                    successor_mfa = Successor,
+										port = Port}};
     {error, Reason} ->
         {stop, Reason}
     end.
@@ -74,22 +78,7 @@ init([Config]) ->
 %%      is returned, the server is stopped and `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------	
-handle_call({send, Address, Msg}, _From, #state{port=Port,listener_socket=ListSock,tcp_acceptor=Ref} = State) ->
-	io:format("Sending message ~p to ~p~n", [Msg, Address]),
-	case open_socket({Address, Port}) of
-		{ok, Socket} ->
-			gen_tcp:send(Socket, converse_packet:encode(Msg)),
-			{reply, {ok, Socket}, State};
-		{error, Reason} ->
-			io:format("Error sending message ~p~n", [Reason]),
-			{reply, {error, Reason}, State}
-	end;
-
-handle_call({send_to_open, Socket, Msg}, _From, State) ->
-	gen_tcp:send(Socket, converse_packet:encode(Msg)),
-	{reply, {ok, Socket}, State};
-	
+%%-------------------------------------------------------------------------		
 handle_call(Request, _From, State) ->
     {stop, {unknown_call, Request}, State}.
 
@@ -115,18 +104,8 @@ handle_cast(_Msg, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------	
-handle_info({bounce, Msg}, #state{layers_receive=Fun} = State) ->
-	io:format("Received bounce request ~p~n", [Msg]),
-	Receiver = case Fun of
-		{} -> undefined;
-		_ -> 
-			AcceptHandler = converse_utils:running_receiver(undefined, Fun),
-			AcceptHandler ! {data, Msg}			
-	end,
-	{noreply, State};
-	
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
-            #state{listener_socket=ListSock, layers_receive=RecFun, tcp_acceptor=Ref} = State) ->
+            #state{socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
 	try
 		case set_sockopt(ListSock, CliSocket) of
 			ok -> ok;
@@ -134,7 +113,13 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 				exit({set_sockopt, Reason})
 	  end,
 
-    {ok, Pid} = converse:start_tcp_client(RecFun),
+    Pid = case converse:start_tcp_client(Config) of
+			{ok, P} -> P;
+			{error, {already_started, P}} -> P;
+			{error, R} -> 
+				io:format("Error starting tcp client ~p~n", [R]),
+				exit({error, R})
+		end,
     gen_tcp:controlling_process(CliSocket, Pid),
     tcp_app_fsm:set_socket(Pid, CliSocket),
 
@@ -150,22 +135,13 @@ handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
 		{stop, Why, State}
 	end;
 
-handle_info({inet_async, ListSock, Ref, Error}, #state{listener_socket=ListSock, tcp_acceptor=Ref} = State) ->
+handle_info({inet_async, ListSock, Ref, Error}, #state{socket=ListSock, tcp_acceptor=Ref} = State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{stop, Error, State};
 
 handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{noreply, State};
-
-% NOT IMPLEMENTED YET
-handle_info({change_receiver, Fun}, #state{layers_receive=RecFun} = State) ->
-	NewState = case RecFun =:= Fun of
-		false -> State#state{layers_receive=Fun};
-		true -> State
-	end,
-	?TRACE("Changed receive function to ~p.\n", [NewState]),
-	{noreply, NewState};
 
 handle_info(Info, State) ->
 	?TRACE("Received info", [Info]),
@@ -180,7 +156,7 @@ handle_info(Info, State) ->
 %% @private
 %%-------------------------------------------------------------------------
 terminate(_Reason, State) ->
-    gen_tcp:close(State#state.listener_socket),
+    gen_tcp:close(State#state.socket),
     ok.
 
 %%-------------------------------------------------------------------------
@@ -207,12 +183,3 @@ set_sockopt(ListSock, CliSocket) ->
     Error ->
         gen_tcp:close(CliSocket), Error
     end.
-
-open_socket({Address, Port}) ->
-	case gen_tcp:connect(Address, Port, [{packet, 2}]) of
-		{error, Reason} ->
-			io:format("Error ~p~n", [Reason]),
-			{error, Reason};
-		{ok, Socket} ->
-			{ok, Socket}
-	end.
