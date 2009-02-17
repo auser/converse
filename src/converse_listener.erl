@@ -40,7 +40,7 @@ start_link(Config) ->
 %%      Create listening socket.
 %% @end
 %%----------------------------------------------------------------------
-init(Config) ->
+init([Config]) ->
 		io:format("Started converse_listener with ~p~n", [Config]),
     process_flag(trap_exit, true),
 				

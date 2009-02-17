@@ -8,6 +8,8 @@
 -export([init/1, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
+-export ([layers_receive/0]).
+
 %% FSM States
 -export([
     socket/2,
@@ -39,6 +41,14 @@ start_link(Config) ->
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
+
+% ONLY FOR TESTING PURPOSES
+layers_receive() ->
+	receive
+		Anything -> 
+			layers_log:info("~p received message ~p~n", [self(), converse_packet:decode(Anything)]),
+			layers_receive()
+	end.
 
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -83,8 +93,7 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Fun} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	layers:pass(Fun, Data),
-	?TRACE("Received data ~p from ~p~n", [Data, Ip]),
+	layers:pass(Fun, Data),	
 	{next_state, data, State};
 
 data(timeout, State) ->

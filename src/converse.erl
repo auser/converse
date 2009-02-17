@@ -27,14 +27,12 @@ start_udp_client(Fun) ->
 	supervisor:start_child(udp_client_sup, []).
 	
 start_tcp_client(Config) -> 	
-	Ip = tcp_host({0,0,0,0}),
-	Port = list_to_atom(integer_to_list(config:parse(port, Config))),
-	Name = erlang:list_to_atom(lists:flatten(io_lib:format("~p_~p_~p", [converse_listener, Ip, Port]))),
-	% ChildSpec = {Name, 
-	% 	{tcp_fsm_sup, start_link,[Name, Config]}, 
-	% 	permanent, infinity, supervisor, [tcp_fsm_sup]},
-	% supervisor:start_child(converse_sup, ChildSpec),
-	tcp_fsm_sup:start_link(Name, Config).
+	?TRACE("Starting tcp client with ~p~n", [Config]),
+	% Ip = tcp_host({0,0,0,0}),
+	% Port = list_to_atom(integer_to_list(config:parse(port, Config))),
+	% Name = erlang:list_to_atom(lists:flatten(io_lib:format("~p_~p_~p", [converse_listener, Ip, Port]))),
+	supervisor:start_child(tcp_client_sup, []).
+	% tcp_fsm_sup:start_link(Name, Config).
 	% supervisor:start_child(tcp_client_sup, ChildSpec).
 
 %%----------------------------------------------------------------------
@@ -58,8 +56,23 @@ stop(_S) ->
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
 init([Config]) ->
-    {ok, []}.
+    {ok, []};
 
+init([Module, Config]) ->
+    {ok,
+        {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
+            [
+              % TCP Client
+              { undefined, % Id = internal id
+                  {Module,start_link,[Config]},          % StartFun = {M, F, A}
+                  temporary, % Restart = permanent | transient | temporary
+                  2000, % Shutdown = brutal_kill | int() >= 0 | infinity
+                  worker, % Type = worker | supervisor
+                  [] % Modules = [Module] | dynamic
+              }
+            ]
+        }
+    }.
 %%----------------------------------------------------------------------
 %% Internal functions
 %%----------------------------------------------------------------------
