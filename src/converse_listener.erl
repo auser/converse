@@ -52,7 +52,7 @@ init([Config]) ->
 		Port = converse_utils:safe_integer(converse_utils:get_app_env(port, Config, ?DEFAULT_PORT)),
 
     Opts = [binary, {packet, raw}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
-		?TRACE("Starting converse_listener with config ~p~n", [Config]),
+		?TRACE("Starting converse_listener with config and successor~n", [Config, Successor]),
 				
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
