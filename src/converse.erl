@@ -43,9 +43,7 @@ start(_Type, Config) ->
 				{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
 				{"Converse supervisor", fun() -> converse_sup:start_link() end},
 				{"Testttttting", fun() -> io:format("Testing launching~n") end},
-				{"Converse listener", fun() -> 
-					io:format("Starting from supervisor:start_link(~p)~n", [Converse]),
-					supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]) end}
+				{"Converse listener", fun() -> supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]) end}
 			]),
 			Fun = config:parse(successor, Config),
 			layers:register_process(Fun, self()).
@@ -68,14 +66,14 @@ init([Module, Config]) ->
 	          }
 	          % Client instance supervisor
 	          ,{ tcp_client,
-	              {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Config]]},
+	              {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [sup, Module, Config]]},
 	              permanent,infinity,supervisor,[]
 	          }
 	        ]
 	    }
 	};
 
-init([Config]) ->
+init([sup, Module, Config]) ->
 	{ok,
 	    {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
 	        [
