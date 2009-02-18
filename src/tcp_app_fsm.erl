@@ -90,9 +90,9 @@ socket(Other, State) ->
 	{next_state, socket, State}.
 
 %% Notification event coming from client
-data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Fun} = State) ->
+data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Successor} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	layers:pass(Fun, Data),	
+	layers:pass(Successor, Data),	
 	{next_state, data, State};
 
 data(timeout, State) ->
