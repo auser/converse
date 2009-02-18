@@ -52,6 +52,8 @@ stop(_S) ->
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
 init([Config]) ->
+	Fun = config:parse(successor, Config),
+	layers:register_process(Fun, self()),
 	{ok, []}.
 
 %%----------------------------------------------------------------------

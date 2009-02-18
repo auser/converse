@@ -1,4 +1,4 @@
-{application, converse,
+{application, converse_app,
  [
   {description, "Converse server"},
   {vsn, "1.0"},

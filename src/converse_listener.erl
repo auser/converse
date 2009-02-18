@@ -51,6 +51,7 @@ init([Config]) ->
 
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
+				?TRACE("Started listening on port", [Port, Sock]),
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(Sock, -1),
         {ok, #state{socket = Sock,
@@ -102,7 +103,6 @@ handle_cast(_Msg, State) ->
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
 	try
-		?TRACE("Received connection request", []),
 		case set_sockopt(ListSock, CliSocket) of
 			ok -> ok;
 			{error, Reason} -> 
