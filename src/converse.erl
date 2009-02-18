@@ -38,12 +38,17 @@ start_tcp_client(Config) ->
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
-start(_Type, Config) ->		
+start(_Type, Config) ->
 			layers:start_bundle([
 				{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
 				{"Converse supervisor", fun() -> converse_sup:start_link() end},
-				{"Converse listener", fun() -> converse_listener_sup:start_link(?MODULE, Config) end}
-			]).
+				{"Testttttting", fun() -> io:format("Testing launching~n") end},
+				{"Converse listener", fun() -> 
+					io:format("Starting from supervisor:start_link(~p)~n", [Converse]),
+					supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]) end}
+			]),
+			Fun = config:parse(successor, Config),
+			layers:register_process(Fun, self()).
 
 stop(_S) ->
     ok.
@@ -51,10 +56,40 @@ stop(_S) ->
 %%----------------------------------------------------------------------
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
+init([Module, Config]) ->		
+	?TRACE("Config in converse_listener_sup", [Config]),
+	{ok,
+	    {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
+	        [
+	          % TCP Listener
+	          { tcp_server,
+	              {converse_listener,start_link,[Config]},
+	              permanent,2000,worker,[converse_listener]
+	          }
+	          % Client instance supervisor
+	          ,{ tcp_client,
+	              {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [Config]]},
+	              permanent,infinity,supervisor,[]
+	          }
+	        ]
+	    }
+	};
+
 init([Config]) ->
-	Fun = config:parse(successor, Config),
-	layers:register_process(Fun, self()),
-	{ok, []}.
+	{ok,
+	    {_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
+	        [
+	          % TCP Client
+	          { undefined, % Id = internal id
+	              {Module,start_link,[Config]},          % StartFun = {M, F, A}
+	              temporary, % Restart = permanent | transient | temporary
+	              2000, % Shutdown = brutal_kill | int() >= 0 | infinity
+	              worker, % Type = worker | supervisor
+	              [] % Modules = [Module] | dynamic
+	          }
+	        ]
+	    }
+	}.
 
 %%----------------------------------------------------------------------
 %% Internal functions
