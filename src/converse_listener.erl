@@ -41,15 +41,14 @@ start_link(Config) ->
 %% @end
 %%----------------------------------------------------------------------
 init([Config]) ->
-		io:format("Started converse_listener with ~p~n", [Config]),
     process_flag(trap_exit, true),
 				
 		Successor = config:parse(successor, Config),		
 		Port = converse_utils:safe_integer(converse_utils:get_app_env(port, Config, ?DEFAULT_PORT)),
 
     Opts = [binary, {packet, raw}, {reuseaddr, true}, {keepalive, true}, {backlog, 30}, {active, false}],
-		?TRACE("Starting converse_listener with config and successor~n", [Config, Successor]),
-				
+		?TRACE("Starting converse_listener with config and successor~n", [Config]),
+
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
         %%Create first accepting process
@@ -103,6 +102,7 @@ handle_cast(_Msg, State) ->
 handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
             #state{socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
 	try
+		?TRACE("Received connection request", []),
 		case set_sockopt(ListSock, CliSocket) of
 			ok -> ok;
 			{error, Reason} -> 

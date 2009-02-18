@@ -30,11 +30,11 @@ converse:send_to_open(Sock, {data, "yo"}).
 {ok, Socket} = gen_udp:open(0, [binary]).
 ok = gen_udp:send(Socket, {0,0,0,0}, 1235, <<"hi">>).
 
-f(S),{ok, S} = gen_tcp:connect({0,0,0,0}, 8021, [{packet, 2}]).
+f(S),{ok, S} = gen_tcp:connect({0,0,0,0}, 1234, [{packet, raw}]).
 gen_tcp:send(S, <<"hello">>).
 
 converse:start(normal, [{successor, [converse]}, {port, 1235}]).
-converse:open_and_send({0,0,0,0}, {data, "hi"}).
+converse:open_and_send({0,0,0,0}, 1235, {data, "hi"}).
 
 layers:start([converse, whisper, test_app], [{port, 22001}]).
 converse:open_and_send({97,94,97,10}, {data, "hi"}).

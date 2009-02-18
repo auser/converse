@@ -80,7 +80,7 @@ init([Config]) ->
 %%-------------------------------------------------------------------------
 socket({socket_ready, Socket}, State) when is_port(Socket) ->
 	% Now we own the socket
-	inet:setopts(Socket, [{active, once}, {packet, 2}, binary]),
+	inet:setopts(Socket, [{active, once}, {packet, raw}, binary]),
 	{ok, {IP, _Port}} = inet:peername(Socket),
 	{next_state, data, State#state{socket=Socket, addr=IP}};
 
@@ -92,6 +92,7 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Successor} = State) ->
 	DataToSend = converse_packet:decode(Data),
+	?TRACE("Received data", [Data]),
 	layers:pass(Successor, Data),	
 	{next_state, data, State};
 
