@@ -39,11 +39,7 @@ start_tcp_client(Config) ->
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
 start(_Type, Config) ->		
-		lists:foreach(fun({Name, Process}) -> 
-			io:format("Starting ~p~n", [Name]),
-			Process(),
-			io:format("Started.~n") end,
-			[
+			layers:start_bundle([
 				{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
 				{"Converse supervisor", fun() -> converse_sup:start_link() end},
 				{"Converse listener", fun() -> converse_listener_sup:start_link(?MODULE, Config) end}
@@ -56,7 +52,7 @@ stop(_S) ->
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
 init([Config]) ->
-    {ok, []}.
+	{ok, []}.
 
 %%----------------------------------------------------------------------
 %% Internal functions
