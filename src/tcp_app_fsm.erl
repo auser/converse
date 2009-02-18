@@ -92,7 +92,7 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{addr=Ip, socket=S, successor_mfa=Successor} = State) ->
 	DataToSend = converse_packet:decode(Data),
-	?TRACE("Received data", [Data]),
+	?TRACE("Received data", [Data, Successor]),
 	layers:pass(Successor, Data),	
 	{next_state, data, State};
 
