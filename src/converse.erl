@@ -8,7 +8,7 @@
 %% Internal API
 -export([start_tcp_client/1, start_udp_client/1]).
 -export ([send/3, open_and_send/3, send_to_open/2]).
--export ([layers_receive/1]).
+-export ([layers_receive/0]).
 %% Application and Supervisor callbacks
 -export([start/2, stop/1, init/1]).
 
@@ -16,11 +16,11 @@
 %% API
 
 % Only used for testing
-layers_receive(From) ->
+layers_receive() ->
 	receive
 		Anything -> 
 			io:format("Received (in ~p) ~p~n", [?MODULE, Anything]),
-			layers_receive(From)
+			layers_receive()
 	end.
 
 start_udp_client(Fun) ->
