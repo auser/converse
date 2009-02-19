@@ -38,15 +38,18 @@ start_tcp_client(Config) ->
 %%----------------------------------------------------------------------
 %% Application behaviour callbacks
 %%----------------------------------------------------------------------
-start(_Type, Config) ->
-			layers:start_bundle([
-				{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
-				{"Converse supervisor", fun() -> converse_sup:start_link() end},
-				{"Testttttting", fun() -> io:format("Testing launching~n") end},
-				{"Converse listener", fun() -> supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]) end}
-			]),
-			Fun = config:parse(successor, Config),
-			layers:register_process(Fun, self()).
+start(_Type, Config) ->		
+		layers:start_bundle([
+			{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
+			{"Converse supervisor", fun() -> converse_sup:start_link() end},
+			{"Converse listener", fun() -> 
+				supervisor:start_link({local, ?MODULE}, ?MODULE, [tcp_app_fsm, Config]) 
+				% start_child(tcp_app_fsm, Config),
+				end}
+		]),
+		Fun = config:parse(successor, Config),
+		% layers:register_process(Fun, whereis(converse_listener)),
+		ok.
 
 stop(_S) ->
     ok.
@@ -55,22 +58,15 @@ stop(_S) ->
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
 init([Module, Config]) ->		
-	?TRACE("Config in converse_listener_sup", [Config]),
 	{ok,
 	    {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
-	        [
-	          % TCP Listener
-	          { tcp_server,
-	              {converse_listener,start_link,[Config]},
-	              permanent,2000,worker,[converse_listener]
-	          }
-	          % Client instance supervisor
-	          ,{ tcp_client,
-	              {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [sup, Module, Config]]},
-	              permanent,infinity,supervisor,[]
-	          }
-	        ]
-	    }
+				[{ tcp_server,
+				    {converse_listener,start_link,[Config]},
+				    permanent,2000,worker,[converse_listener]
+				},{ tcp_client,
+				    {supervisor,start_link,[{local, tcp_client_sup}, ?MODULE, [sup, Module, Config]]},
+				    permanent,infinity,supervisor,[]
+				}]}
 	};
 
 init([sup, Module, Config]) ->
@@ -80,7 +76,7 @@ init([sup, Module, Config]) ->
 	          % TCP Client
 	          { undefined, % Id = internal id
 	              {Module,start_link,[Config]},          % StartFun = {M, F, A}
-	              temporary, % Restart = permanent | transient | temporary
+	              permanent, % Restart = permanent | transient | temporary
 	              2000, % Shutdown = brutal_kill | int() >= 0 | infinity
 	              worker, % Type = worker | supervisor
 	              [] % Modules = [Module] | dynamic
@@ -98,7 +94,7 @@ open_and_send(Address, Port, Msg) ->
 	case open_socket({Address, Port}) of
 		{ok, Socket} ->
 			send_to_open(Socket, Msg),
-			ok;
+			{ok, Socket};
 		{error, Reason} ->
 			io:format("Error in sending message to ~p:~p: ~p~n", [Address, Port, Reason]),
 			error
@@ -126,3 +122,9 @@ tcp_host(IPAddress) ->
         {ok, #hostent{h_name = Name}} -> Name;
         {error, _Reason} -> inet_parse:ntoa(IPAddress)
     end.
+
+start_child(Mod, Args) ->
+    {ok,_} = supervisor:start_child(converse_sup,
+                                    {Mod, {Mod, start_link, [Args]},
+                                     transient, 100, worker, [Mod]}),
+    ok.

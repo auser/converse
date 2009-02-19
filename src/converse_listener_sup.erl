@@ -3,11 +3,11 @@
 
 -behaviour(supervisor).
 
--export([start_link/2]).
+-export([start_link/1]).
 
 -export([init/1]).
 
-start_link(Name, Config) ->
+start_link([Name, Config]) ->
 	?TRACE("Config in converse_listener_sup", [Config]),
 	supervisor:start_link({local, Name}, ?MODULE, [Config]).
 
