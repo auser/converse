@@ -1,0 +1,2 @@
+-define (MAXIMUM_RESTARTS, 10).
+-define (MAX_DELAY_TIME, 60).

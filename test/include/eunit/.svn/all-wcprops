@@ -1,0 +1,53 @@
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/contribs/!svn/ver/313/trunk/eunit
+END
+sys.config
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/contribs/!svn/ver/2/trunk/eunit/sys.config
+END
+AUTHORS
+K 25
+svn:wc:ra_dav:version-url
+V 42
+/contribs/!svn/ver/188/trunk/eunit/AUTHORS
+END
+CHANGELOG
+K 25
+svn:wc:ra_dav:version-url
+V 44
+/contribs/!svn/ver/188/trunk/eunit/CHANGELOG
+END
+COPYING
+K 25
+svn:wc:ra_dav:version-url
+V 42
+/contribs/!svn/ver/103/trunk/eunit/COPYING
+END
+NOTES
+K 25
+svn:wc:ra_dav:version-url
+V 40
+/contribs/!svn/ver/243/trunk/eunit/NOTES
+END
+vsn.mk
+K 25
+svn:wc:ra_dav:version-url
+V 41
+/contribs/!svn/ver/271/trunk/eunit/vsn.mk
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/contribs/!svn/ver/244/trunk/eunit/Makefile
+END
+README
+K 25
+svn:wc:ra_dav:version-url
+V 41
+/contribs/!svn/ver/188/trunk/eunit/README
+END
