@@ -1,3 +1,12 @@
+[submodule "deps/whisper"]
+  path = deps/whisper
+  url = git://github.com/auser/whisper.git
+[submodule "deps/converse"]
+  path = deps/converse
+  url = git://github.com/auser/converse.git
 [submodule "deps/configerl"]
-	path = deps/configerl
-	url = git://github.com/auser/configerl.git
+  path = deps/configerl
+  url = git://github.com/auser/configerl.git
+[submodule "deps/layers"]
+  path = deps/layers
+  url = git://github.com/auser/layers.git
