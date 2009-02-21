@@ -6,7 +6,7 @@
 -behaviour(gen_fsm).
 
 %% External exports
--export([start_link/1]).
+-export([start_link/1, start_remote_link/2]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
@@ -163,6 +163,12 @@ data({send, Msg, Timeout}, From, StateData) when StateData#state.connect_mode ==
 	{reply, queued, data, StateData};
 
 data(get_state, From, StateData) -> {reply, {data, StateData}, data, StateData};
+
+% data({create_connection, Addr}, From, State) ->	
+% 	io:format("{create_connection, ~p} in ~p~n", [Addr, ?MODULE]),
+% 	Pid = ?MODULE:start_remote_link(Addr, State#state.config),
+% 	{reply, Pid, State};
+
 data({send, Addr, Msg, Timeout}, From, State) -> {reply, {data, State}, data, State}.
    
 %%----------------------------------------------------------------------
@@ -186,6 +192,7 @@ handle_event(Event, StateName, StateData) ->
 %%          {stop, Reason, Reply, NewStateData}                    
 %%----------------------------------------------------------------------
 % handle_sync_event({create_connection, Addr}, From, StateName, State) ->	
+% 	io:format("{create_connection, ~p} in ~p~n", [Addr, ?MODULE]),
 % 	Pid = ?MODULE:start_remote_link(Addr, State#state.config),
 % 	{reply, Pid, StateName, State};
 

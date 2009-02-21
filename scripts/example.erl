@@ -3,3 +3,4 @@ converse:send({0,0,0,0}, {"hi"}).
 
 layers:start([converse, layers_test_app], []).
 converse:send({0,0,0,0}, {"hi"}).
+converse:send({0,0,0,1}, {"hi"}).
