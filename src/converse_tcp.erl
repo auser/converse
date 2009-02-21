@@ -52,18 +52,19 @@ start_remote_link(Addr, Config) ->
 	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Addr),
   gen_fsm:start_link({local, Reg_name}, ?MODULE, [Config], []).
 
-send(Addr, Msg) -> send(Addr, Msg, ?DEFAULT_TIMEOUT).
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) -> gen_fsm:send_event(Pid, {socket_ready, Socket}).
-	
+
+send(Addr, Msg) -> send(Addr, Msg, ?DEFAULT_TIMEOUT).	
 send(Addr, Msg, Timeout) ->
 	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Addr),
-	case global:whereis_name(Reg_name) of
-		Pid -> gen_fsm:sync_send_event({global, Reg_name}, {send, Msg, Timeout});
+	case global:whereis_name(Reg_name) of		
 		undefined ->
 			% Spawn a new client connection
 			MyLocalClient = converse_utils:get_registered_name_for_address(tcp, client, {0,0,0,0}),
 			Reply = gen_fsm:sync_send_event({global, MyLocalClient}, {create_connection, Addr}),
 			io:format("Reply from create_connection(~p): ~p~n", [Addr, Reply]),
+			gen_fsm:sync_send_event({global, Reg_name}, {send, Msg, Timeout});
+		Pid -> 
 			gen_fsm:sync_send_event({global, Reg_name}, {send, Msg, Timeout})
 	end.
 	
@@ -146,7 +147,6 @@ socket(get_state, From, StateData) -> {reply, {socket, StateData}, socket, State
 
 %%----------------------------------------------------------------------
 data({send, Msg, Timeout}, From, StateData) when StateData#state.connect_mode == ok ->
-	io:format("Received {send, ~p, ~p} From ~p when in connect_mode = ok~n", [Msg, Timeout, From]),
 	Ref = erlang:start_timer(Timeout, self(), message_timeout),
 	case send_msg(StateData, Msg, Ref) of
 		ok ->
@@ -468,7 +468,7 @@ maybe_create_queue_table(true, Name) ->
 send_msg(StateData, Msg, Ref) when StateData#state.secret == false ->
 	gen_tcp:send(StateData#state.socket, converse_packet:encode({send, Msg, Ref, []}));
 send_msg(StateData, Msg, Ref) ->
-	io:format("send_msg(~p,~p,~p)~n", [StateData, Msg, Ref]),
+	% io:format("send_msg(~p,~p,~p)~n", [StateData, Msg, Ref]),
 	gen_tcp:send(StateData#state.socket, converse_packet:encode({send, Msg, Ref, md5({Msg, Ref}, StateData#state.secret)})).
 
 send_heart(StateData, Ref) when StateData#state.secret == false ->
