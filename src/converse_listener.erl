@@ -1,124 +1,193 @@
 -module (converse_listener).
 -include ("converse.hrl").
 
--export([start_link/1]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([create/2]).
-
 -behaviour(gen_server).
 
--record(state,{	listen_socket = [],		% Listener socket reference
-								accept_pid = null,		% Pid of current acceptor
-								tcp_acceptor = null, 	% Acceptor Ref
+-record(state,{	listen_socket = [],
+								accept_pid = null,
+								tcp_acceptor = null,
 								successor = undefined,
-								secret = null}).			% Shared Secret
-%%%----------------------------------------------------------------------
-%%% API
-%%%----------------------------------------------------------------------
-start_link(Config) ->
-	Name = converse_utils:get_registered_name_for_address(tcp, listener, {0,0,0,0}),
-	gen_server:start_link({local, Name}, ?MODULE, [Config], []).
+								config = 0}).
 
+%% External API
+-export([start_link/1,create/2]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
+         code_change/3]).
 
-%% Access to this server from socket servers
+%%--------------------------------------------------------------------
+%% @spec (Port::integer(), Module) -> {ok, Pid} | {error, Reason}
+%
+%% @doc Called by a supervisor to start the listening process.
+%% @end
+%%----------------------------------------------------------------------
+start_link(Config) ->	
+	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+
 create(ServerPid, Pid) ->
 	gen_server:cast(ServerPid, {create, Pid}).
-
-
-%%%----------------------------------------------------------------------
+				
+%%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
-%%%----------------------------------------------------------------------
+%%%------------------------------------------------------------------------
 
 %%----------------------------------------------------------------------
-%% Func: init/1
-%% Returns: {ok, State}          |
-%%          {ok, State, Timeout} |
-%%          ignore               |
-%%          {stop, Reason}
+%% @spec (Port::integer()) -> {ok, State}           |
+%%                            {ok, State, Timeout}  |
+%%                            ignore                |
+%%                            {stop, Reason}
+%%
+%% @doc Called by gen_server framework at process startup.
+%%      Create listening socket.
+%% @end
 %%----------------------------------------------------------------------
 init([Config]) ->
-	process_flag(trap_exit, true),
-	[Port,Secret,Successor] = config:fetch_or_default_config([port,secret,successor], Config, ?DEFAULT_CONFIG),
-	RealSecret = format_secret(Secret),
+    process_flag(trap_exit, true),
+		
+		[Opts, Port,Successor] = config:fetch_or_default_config([sock_opts,port,successor], Config, ?DEFAULT_CONFIG),
+
+    case gen_tcp:listen(Port, Opts) of
+    {ok, Sock} ->
+        %%Create first accepting process
+        {ok, Ref} = prim_inet:async_accept(Sock, -1),
+        {ok, #state{listen_socket = Sock,
+										tcp_acceptor = Ref,
+										config = Config,
+                    successor = Successor}};
+    {error, Reason} ->
+        {stop, Reason}
+    end.
+
+%%-------------------------------------------------------------------------
+%% @spec (Request, From, State) -> {reply, Reply, State}          |
+%%                                 {reply, Reply, State, Timeout} |
+%%                                 {noreply, State}               |
+%%                                 {noreply, State, Timeout}      |
+%%                                 {stop, Reason, Reply, State}   |
+%%                                 {stop, Reason, State}
+%% @doc Callback for synchronous server calls.  If `{stop, ...}' tuple
+%%      is returned, the server is stopped and `terminate/2' is called.
+%% @end
+%% @private
+%%-------------------------------------------------------------------------		
+handle_call(Request, _From, State) ->
+    {stop, {unknown_call, Request}, State}.
+
+%%-------------------------------------------------------------------------
+%% @spec (Msg, State) ->{noreply, State}          |
+%%                      {noreply, State, Timeout} |
+%%                      {stop, Reason, State}
+%% @doc Callback for asyncrous server calls.  If `{stop, ...}' tuple
+%%      is returned, the server is stopped and `terminate/2' is called.
+%% @end
+%% @private
+%%-------------------------------------------------------------------------	
+handle_cast({create,Pid,CliSocket}, #state{listen_socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
+	NewPid = case converse_app:start_tcp_client(Config) of
+		{ok, P} -> P;
+		{error, {already_started, P}} -> P;
+		{error, R} -> 
+			io:format("Error starting tcp client ~p~n", [R]),
+			exit({error, R})
+	end,
+  gen_tcp:controlling_process(CliSocket, NewPid),
+  converse_tcp:set_socket(NewPid, CliSocket),
+
+  case prim_inet:async_accept(ListSock, -1) of
+    {ok, NewRef} -> ok;
+		{error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
+	end,
+	{noreply, State#state{accept_pid=NewPid}};
 	
-	case gen_tcp:listen(Port, ?DEFAULT_SOCKET_OPTS) of
-		{ok, ListenSocket} ->
-			%%Create first accepting process
-			{ok, Pid} = converse_socket:start(self(), ListenSocket, RealSecret, Successor),
-			converse_socket:get_connection(Pid),
-			{ok, #state{listen_socket = ListenSocket, accept_pid = Pid, secret = RealSecret}};
-		{error, Reason} ->
-			{stop, Reason}
-	end.
-%%----------------------------------------------------------------------
-%% Func: handle_call/3
-%% Returns: {reply, Reply, State}          |
-%%          {reply, Reply, State, Timeout} |
-%%          {noreply, State}               |
-%%          {noreply, State, Timeout}      |
-%%          {stop, Reason, Reply, State}   | (terminate/2 is called)
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_call(Request,From,State) ->
-    {reply,ok,State}.
+handle_cast(_Msg, State) ->
+	{noreply, State}.
 
+%%-------------------------------------------------------------------------
+%% @spec (Msg, State) ->{noreply, State}          |
+%%                      {noreply, State, Timeout} |
+%%                      {stop, Reason, State}
+%% @doc Callback for messages sent directly to server's mailbox.
+%%      If `{stop, ...}' tuple is returned, the server is stopped and
+%%      `terminate/2' is called.
+%% @end
+%% @private
+%%-------------------------------------------------------------------------	
+handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
+            #state{listen_socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
+	try
+		case set_sockopt(ListSock, CliSocket) of
+			ok -> ok;
+			{error, Reason} -> 
+				exit({set_sockopt, Reason})
+	  end,
 
-%%----------------------------------------------------------------------
-%% Func: handle_cast/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-handle_cast({create,Pid}, State) ->
-    {ok, NewPid} = converse_socket:start(self(), State#state.listen_socket, State#state.secret, State#state.successor),
-    converse_socket:get_connection(NewPid),
-    {noreply, State#state{accept_pid = NewPid}}.
+    Pid = case converse_app:start_tcp_client(Config) of
+			{ok, P} -> P;
+			{error, {already_started, P}} -> P;
+			{error, R} -> 
+				io:format("Error starting tcp client ~p~n", [R]),
+				exit({error, R})
+		end,
+    gen_tcp:controlling_process(CliSocket, Pid),
+    converse_tcp:set_socket(Pid, CliSocket),
 
-%%----------------------------------------------------------------------
-%% Func: handle_info/2
-%% Returns: {noreply, State}          |
-%%          {noreply, State, Timeout} |
-%%          {stop, Reason, State}            (terminate/2 is called)
-%%----------------------------------------------------------------------
-% 
-handle_info({'EXIT', Pid, {error, accept_failed}}, State) ->
-    create(self(), self()),			% Start off new acceptor as listen socket is still open
-    {noreply,State};
+    %% Signal the network driver that we are ready to accept another connection
+    case prim_inet:async_accept(ListSock, -1) of
+	    {ok, NewRef} -> ok;
+			{error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
+		end,
+		{noreply, State#state{tcp_acceptor=NewRef}}
+		
+	catch exit:Why ->
+		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
+		{stop, Why, State}
+	end;
 
-% normal shutdown of socket process
-handle_info({'EXIT', Pid, normal}, State) ->
-    {noreply,State};
+handle_info({inet_async, ListSock, Ref, Error}, #state{listen_socket=ListSock, tcp_acceptor=Ref} = State) ->
+	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
+	{stop, Error, State};
 
-% unexpected shutdown of current acceptor
-handle_info({'EXIT', Pid, Reason}, State) when State#state.accept_pid == Pid ->
-%    io:format("Acceptor quit: ~p~n",[Reason]),
-    create(self(), self()),
-    {noreply,State};
+handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
+	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
+	{noreply, State};
 
 handle_info(Info, State) ->
-    io:format("converse server. Unexpected info: ~p~n",[Info]),
-    {noreply,State}.
+	io:format("Received info", [Info]),
+  {noreply, State}.
 
-%%----------------------------------------------------------------------
-%% Func: terminate/2
-%% Purpose: Shutdown the server
-%% Returns: any (ignored by gen_server)
-%%----------------------------------------------------------------------
-terminate(Reason,State) ->
+%%-------------------------------------------------------------------------
+%% @spec (Reason, State) -> any
+%% @doc  Callback executed on server shutdown. It is only invoked if
+%%       `process_flag(trap_exit, true)' is set by the server process.
+%%       The return value is ignored.
+%% @end
+%% @private
+%%-------------------------------------------------------------------------
+terminate(_Reason, State) ->
     gen_tcp:close(State#state.listen_socket),
     ok.
 
-%%----------------------------------------------------------------------
-%% Func: code_change/3
-%% Purpose: Convert process state when code is changed
-%% Returns: {ok, NewState}
-%%----------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+%%-------------------------------------------------------------------------
+%% @spec (OldVsn, State, Extra) -> {ok, NewState}
+%% @doc  Convert process state when code is changed.
+%% @end
+%% @private
+%%-------------------------------------------------------------------------
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%%----------------------------------------------------------------------
+%%%------------------------------------------------------------------------
 %%% Internal functions
-%%%----------------------------------------------------------------------
+%%%------------------------------------------------------------------------
 
-format_secret(Secret) when list(Secret) -> list_to_binary(Secret);
-format_secret(false) -> false.
+set_sockopt(ListSock, CliSocket) ->
+    true = inet_db:register_socket(CliSocket, inet_tcp),
+    case prim_inet:getopts(ListSock, [active, nodelay, keepalive, delay_send, priority, tos]) of
+    {ok, Opts} ->
+        case prim_inet:setopts(CliSocket, Opts) of
+        ok    -> ok;
+        Error -> gen_tcp:close(CliSocket), Error
+        end;
+    Error ->
+        gen_tcp:close(CliSocket), Error
+    end.

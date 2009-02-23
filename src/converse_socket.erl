@@ -9,7 +9,7 @@
 
 % Internal state for this socket process
 -record(state,{	listen_pid,		% Pid of Listener
-								lis_socket,		% Listener Socket
+								listen_socket,		% Listener Socket
 								socket = undefined,	% Socket ref
 								successor = null,
 								secret = null}).		% Shared Secret
@@ -34,7 +34,7 @@ get_connection(Pid) -> gen_server:cast(Pid, get_conn).
 %%          {stop, Reason}
 %%----------------------------------------------------------------------
 init({ListenPid, ListenSocket, Secret, Successor}) ->
-	{ok, #state{listen_pid = ListenPid, lis_socket = ListenSocket, secret = Secret, successor = Successor}}.
+	{ok, #state{listen_pid = ListenPid, listen_socket = ListenSocket, secret = Secret, successor = Successor}}.
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -56,7 +56,7 @@ handle_call(Request,From,State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_cast(get_conn, State) ->
-	case catch gen_tcp:accept(State#state.lis_socket) of
+	case catch gen_tcp:accept(State#state.listen_socket) of
 	{error, closed} -> 	{stop, {error, accept_failed}, State};
 	{error, Reason} -> 	{stop, {error, accept_failed}, State};
 	{'EXIT', Reason} -> {stop, {error, accept_failed}, State};

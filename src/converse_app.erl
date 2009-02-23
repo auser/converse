@@ -6,6 +6,7 @@
 
 %% application callbacks
 -export([start/2, stop/1]).
+-export ([start_tcp_client/1]).
 -export ([init/1]).
 
 %%%----------------------------------------------------------------------
@@ -13,7 +14,7 @@
 %%%----------------------------------------------------------------------
 
 start_tcp_client(Config) -> 	
-	supervisor:start_child(converse_tcp, [Config]).
+	supervisor:start_child(converse_tcp, []).
 	
 %%----------------------------------------------------------------------
 %% Func: start/2
@@ -26,7 +27,7 @@ start(_Type, Config) ->
 			{"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
 			{"Converse supervisor", fun() -> converse_sup:start_link() end},
 			{"Converse listener", fun() -> 
-				converse_tcp:start_link(Config),
+				% converse_tcp:start_link(Config),
 				supervisor:start_link({local, ?MODULE}, ?MODULE, [converse_tcp, Config])
 				% start_tcp_client(Config)
 				% start_child(tcp_app_fsm, Config),
@@ -59,5 +60,5 @@ init([Module, Config]) ->
 init([sup, Module, Config]) ->
 	{ok,
 		{_SupFlags = {simple_one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
-		[{ undefined, {Module,start_link,[Config]}, permanent,2000,worker,[Module]}]}
+		[{ undefined, {Module,start_link,[Config]},permanent,2000,worker,[]}]}
 	}.
