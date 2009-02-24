@@ -61,7 +61,6 @@ send(Addr, Msg, Timeout) ->
 		undefined ->
 			% Spawn a new client connection
 			MyLocalClient = converse_utils:get_registered_name_for_address(tcp, client, Addr),
-			{ok, Sock} = gen_tcp:connect({0,0,0,0}, Port, [binary]).
 			Reply = gen_fsm:sync_send_event({global, MyLocalClient}, {create_connection, Addr}),
 			io:format("Reply from create_connection(~p): ~p~n", [Addr, Reply]),
 			gen_fsm:sync_send_event({global, Reg_name}, {send, Msg, Timeout});
