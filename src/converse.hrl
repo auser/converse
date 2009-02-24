@@ -9,6 +9,7 @@
 -define (SLOWDOWN_INTERVAL, 500).
 
 -record(converse_message_queue, {index, message}).
+-define(LOG_MESSAGE(TAG, SIZE), converse_logger:log(TAG, SIZE)).
 
 -define (DEFAULT_SOCKET_OPTS, [binary,{packet,raw},{active,false}, {reuseaddr,true},{keepalive,true},{backlog,30}]).
 

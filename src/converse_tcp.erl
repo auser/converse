@@ -4,7 +4,7 @@
 
 -behaviour(gen_fsm).
 
--export([start_link/2, set_socket/2]).
+-export([start_link/1, set_socket/2]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -27,8 +27,6 @@
 								config = [],					% Starting config
 								connect_to_pid = 0,		% connection pid process
 								retry_connect_timer,	% timer for retry
-								heartbeat_fails = 0,	% Number of failed heartbeat requests
-								heartbeat_timeout_ref,% Timer ref for heartbeat
 								messages = 0,					% message queue
 								reg_name = 0,					% registered name for this process
 								connect_mode = ok,		% Connection mode (1)
@@ -49,8 +47,8 @@
 %%      respectively.
 %% @end
 %%-------------------------------------------------------------------------
-start_link(Config, Name) ->
-   gen_fsm:start_link({local, Name}, ?MODULE, [Config], []).
+start_link(Config) ->	
+	gen_fsm:start_link(?MODULE, [Config], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
@@ -61,8 +59,12 @@ close_socket() ->
 % ONLY FOR TESTING PURPOSES
 layers_receive(Msg) ->
 	case Msg of
-		{data, Socket, Data} -> io:format("~p received in layers_receive: ~p~n", [?MODULE, Data]);
-		Else -> io:format("~p received unknown message: ~p~n", [?MODULE, Else])
+		{data, Socket, Data} -> 
+			io:format("~p received in layers_receive: ~p~n", [?MODULE, Data]),			
+			Reply = io_lib:format("received ~p", [Data]),
+			{reply, Reply};
+		Else -> 
+			io:format("~p received unknown message: ~p~n", [?MODULE, Else])
 	end.
 
 %%%------------------------------------------------------------------------
@@ -77,7 +79,7 @@ layers_receive(Msg) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([Reg_name, Config]) ->
+init([Config]) ->
 	io:format("Starting ~p~n", [?MODULE]),
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
@@ -85,16 +87,17 @@ init([Reg_name, Config]) ->
 	Hostname = {0,0,0,0},
 	IpName = inet_parse:ntoa(my_ip()),
 	Name = config:parse_or_default(name, Config, IpName),
-	
-	global:re_register_name(Reg_name, self()),
+	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Name),
 	CanUseQueue = converse_queue:maybe_create_queue_table(Queue, Reg_name),
 	converse_queue:maybe_wait_for_queue_table(CanUseQueue, Reg_name),
 	% erlang:start_timer(0, self(), retry_connect),
 	
 	{ok, socket, #state{messages = ets:new(messages, []),
-	   reg_name = Reg_name, hostname = Hostname, 
-	   queue = CanUseQueue, connect_mode = converse_queue:anything_in_queue(CanUseQueue, Reg_name),
-	   config = Config, port = Port}}.
+	   	hostname = Hostname, 
+	   	queue = CanUseQueue, 
+			connect_mode = converse_queue:anything_in_queue(CanUseQueue, Reg_name),
+			reg_name = Reg_name,
+	   	config = Config, port = Port}}.
 
 %%-------------------------------------------------------------------------
 %% Func: StateName/2
@@ -119,8 +122,7 @@ socket(Other, State) ->
 %% Notification event coming from client
 data({data, Data}, #state{addr=Ip, socket=S, successor=Successor} = State) ->
 	DataToSend = {data, S, Data},
-	?TRACE("Received data", [DataToSend, Successor]),
-	case ?debug of
+	Reply = case ?debug of
 		true -> layers_receive(DataToSend);
 		false -> layers:pass(Successor, DataToSend)
 	end,
@@ -176,33 +178,17 @@ handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = State) ->
 handle_info({close_tcp}, StateName, State) ->
 	{stop, normal, State};
 
-handle_info({tcp_closed, Socket}, StateName, #state{socket=Socket, addr=Addr, heartbeat_timeout_ref = HeartRef} = State) ->
-	case HeartRef of
-		undefined -> {stop, normal, State};
-		_ ->
-			io:format("Closing tcp socket: ~p~n", [Socket]),
-		  error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
-			New_MessageStore = safe_shutdown(State),
-			erlang:start_timer(?RETRY_TIME, self(), retry_connect),
-			{next_state, socket, State#state{socket = 0, messages = New_MessageStore, heartbeat_timeout_ref = none}}			
-	end;
+handle_info({tcp_closed, Socket}, StateName, #state{socket=Socket, addr=Addr} = State) ->
+	error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
+	New_MessageStore = safe_shutdown(State),
+	erlang:start_timer(?RETRY_TIME, self(), retry_connect),
+	{next_state, socket, State#state{socket = 0, messages = New_MessageStore}}
+	;
 	
 handle_info({socket, Socket}, StateName, State) ->
-	cancel_timer(State#state.retry_connect_timer),
-	New_ref = erlang:start_timer(?HEARTBEAT_TIMEOUT, self(), heartbeat_timeout),
-	NewState = State#state{socket = Socket},
 	inet:setopts(Socket, [{active, once}]),
-	{next_state, data, NewState#state{heartbeat_timeout_ref = New_ref, heartbeat_fails = 0}};
-	% case send_heart(NewState, New_ref) of
-	% 	ok -> 
-	% 		cancel_timer(State#state.heartbeat_timeout_ref), % cancel timer from last time
-	% 		{next_state, data, NewState#state{heartbeat_timeout_ref = New_ref, heart_fails = 0}};
-	% 	{error, _} ->
-	% 		cancel_timer(New_ref),
-	% 		gen_tcp:close(Socket),
-	% 		erlang:start_timer(?RETRY_TIME, self(), retry_connect),
-	% 		{next_state, socket, State}
-	% end;
+	io:format("Received {socket, ~p}~n", [Socket]),
+	{next_state, data, State#state{socket = Socket}};
 
 handle_info({timeout, Ref, retry_connect}, StateName, State) ->
 	try_to_kill(State#state.connect_to_pid),
@@ -210,6 +196,7 @@ handle_info({timeout, Ref, retry_connect}, StateName, State) ->
 	Hostname = State#state.hostname,
 	Pid = spawn_link(fun() -> connect_to(Hostname, State#state.port, ?DEFAULT_TIMEOUT, Self) end),
 	Ref1 = erlang:start_timer(?RETRY_TIME, self(), retry_connect),
+	io:format("Timeout happened, let's reconnect~n"),
 	{next_state, StateName, State#state{connect_to_pid = Pid, retry_connect_timer = Ref1}};
 
 handle_info({'EXIT', Pid, normal}, StateName, State) ->
@@ -248,15 +235,11 @@ get_function(Fun) ->
 			end
 	end.
 	
-safe_shutdown(#state{heartbeat_timeout_ref = HeartRef, messages = Messages} = State) ->
-	case HeartRef of
-		undefined -> exit(normal, "Undefined heart reference. Unknown connection~n");
-		_ ->
-			cancel_timer(HeartRef),
-			reply_to_all(Messages),
-			alarm_handler:set_alarm({{client_lost, State#state.hostname}, []}),
-			ets:new(messages, [])
-	end.
+safe_shutdown(#state{messages = Messages} = State) ->
+	% cancel_timer(RetryTimer),
+	reply_to_all(Messages),
+	alarm_handler:set_alarm({{client_lost, State#state.hostname}, []}),
+	ets:new(messages, []).
 
 reply_to_all(MessageStore) -> reply_to_all(ets:first(MessageStore), MessageStore).
 
