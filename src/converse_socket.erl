@@ -13,13 +13,14 @@
 								listen_socket,		% Listener Socket
 								socket = undefined,	% Socket ref
 								successor = null,
+								config = 0,
 								secret = null}).		% Shared Secret
 
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
 start(ListenPid, ListenSocket, Secret, Successor) ->
-    gen_server:start_link(converse_socket, {ListenPid, ListenSocket, Secret, Successor},[]).
+	gen_server:start_link(converse_socket, {ListenPid, ListenSocket, Secret, Successor},[]).
 
 get_connection(Pid) -> gen_server:cast(Pid, get_conn).
 
@@ -84,13 +85,6 @@ handle_info({tcp, Socket, Packet}, #state{successor = Successor} = State) ->
 				false ->
 					{noreply, State}
 			end;
-		{send, Msg, Ref, Checksum} ->
-			case check({Msg, Ref}, State#state.secret, Checksum) of
-				true ->
-					Pid = spawn_link(?MODULE, worker, [Successor, Msg, Ref, Socket]),
-					{noreply, State};
-				false -> {noreply, State}
-			end;
 		Else ->
 			io:format("Socket Received Else: ~p~n",[Else]),
 			{noreply, State}
@@ -103,16 +97,37 @@ handle_info({tcp_error, Socket, Reason}, State) ->
     gen_tcp:close(State#state.socket),
     {stop, converse_skt_error, State};
 
-
-handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{socket=ListSock} = State) ->
+handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{listen_socket=ListSock, config=Config} = State) ->
 	try
-		io:format("Received inet_async in ~p~n", [?MODULE])
+		case set_sockopt(ListSock, CliSocket) of
+			ok -> ok;
+			{error, Reason} -> 
+				exit({set_sockopt, Reason})
+	  end,
+
+    Pid = case converse_app:start_tcp_client(Config) of
+			{ok, P} -> P;
+			{error, {already_started, P}} -> P;
+			{error, R} -> 
+				io:format("Error starting tcp client ~p~n", [R]),
+				exit({error, R})
+		end,
+    gen_tcp:controlling_process(CliSocket, Pid),
+    converse_tcp:set_socket(Pid, CliSocket),
+
+    %% Signal the network driver that we are ready to accept another connection
+    case prim_inet:async_accept(ListSock, -1) of
+	    {ok, NewRef} -> ok;
+			{error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
+		end,
+		{noreply, State#state{tcp_acceptor=NewRef}}
+
 	catch exit:Why ->
 		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
 		{stop, Why, State}
 	end;
 
-handle_info({inet_async, ListSock, Ref, Error}, #state{socket=ListSock} = State) ->
+handle_info({inet_async, ListSock, Ref, Error}, #state{listen_socket=ListSock, tcp_acceptor=Ref} = State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
 	{stop, Error, State};
 
@@ -169,3 +184,15 @@ get_host(Address) ->
 		{ok, Hostent} -> {ok, Hostent#hostent.h_name};
 		{error, Reason} -> error
 	end.
+	
+set_sockopt(ListSock, CliSocket) ->
+    true = inet_db:register_socket(CliSocket, inet_tcp),
+    case prim_inet:getopts(ListSock, [active, nodelay, keepalive, delay_send, priority, tos]) of
+    {ok, Opts} ->
+        case prim_inet:setopts(CliSocket, Opts) of
+        ok    -> ok;
+        Error -> gen_tcp:close(CliSocket), Error
+        end;
+    Error ->
+        gen_tcp:close(CliSocket), Error
+    end.

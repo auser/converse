@@ -7,6 +7,7 @@
 								accept_pid = null,
 								tcp_acceptor = null,
 								successor = undefined,
+								secret = 0,
 								config = 0}).
 
 %% External API
@@ -21,11 +22,13 @@
 %% @doc Called by a supervisor to start the listening process.
 %% @end
 %%----------------------------------------------------------------------
-start_link(Config) ->	
-	gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
-
+start_link(Config) ->
+  Name = converse_utils:get_registered_name_for_address(tcp, listener, {0,0,0,0}),
+  gen_server:start_link({local, Name}, ?MODULE, [Config], []).
+ 
+%% Access to this server from socket servers
 create(ServerPid, Pid) ->
-	gen_server:cast(ServerPid, {create, Pid}).
+  gen_server:cast(ServerPid, {create, Pid}).
 				
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
@@ -44,14 +47,17 @@ create(ServerPid, Pid) ->
 init([Config]) ->
     process_flag(trap_exit, true),
 		
-		[Opts, Port,Successor] = config:fetch_or_default_config([sock_opts,port,successor], Config, ?DEFAULT_CONFIG),
-
+		[Secret,Opts,Port,Successor] = config:fetch_or_default_config([secret,sock_opts,port,successor], Config, ?DEFAULT_CONFIG),
+		RealName = converse_utils:get_registered_name_for_address(tcp, client, {0,0,0,0}),
+		
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
-        %%Create first accepting process
-        {ok, Ref} = prim_inet:async_accept(Sock, -1),
-        {ok, #state{listen_socket = Sock,
-										tcp_acceptor = Ref,
+	      Pid = case global:whereis_name(RealName) of
+	      	undefined -> converse_socket:start_link(self(), Sock, Secret, Successor); % launch new converse_socket acceptor
+					P -> P% converse_socket exists for this connection already
+	      end,
+		    {ok, #state{listen_socket = Sock,
+										tcp_acceptor = Pid,
 										config = Config,
                     successor = Successor}};
     {error, Reason} ->
@@ -82,22 +88,10 @@ handle_call(Request, _From, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------	
-handle_cast({create,Pid,CliSocket}, #state{listen_socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
-	NewPid = case converse_app:start_tcp_client(Config) of
-		{ok, P} -> P;
-		{error, {already_started, P}} -> P;
-		{error, R} -> 
-			io:format("Error starting tcp client ~p~n", [R]),
-			exit({error, R})
-	end,
-  gen_tcp:controlling_process(CliSocket, NewPid),
-  converse_tcp:set_socket(NewPid, CliSocket),
-
-  case prim_inet:async_accept(ListSock, -1) of
-    {ok, NewRef} -> ok;
-		{error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
-	end,
-	{noreply, State#state{accept_pid=NewPid}};
+handle_cast({create,Pid}, State) ->
+    {ok, NewPid} = converse_socket:start(self(), State#state.listen_socket, State#state.secret, State#state.successor),
+    converse_socket:get_connection(NewPid),
+    {noreply, State#state{accept_pid = NewPid}};
 	
 handle_cast(_Msg, State) ->
 	{noreply, State}.
@@ -112,45 +106,6 @@ handle_cast(_Msg, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------	
-handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
-            #state{listen_socket=ListSock, tcp_acceptor=Ref, config=Config} = State) ->
-	try
-		case set_sockopt(ListSock, CliSocket) of
-			ok -> ok;
-			{error, Reason} -> 
-				exit({set_sockopt, Reason})
-	  end,
-
-    Pid = case converse_app:start_tcp_client(Config) of
-			{ok, P} -> P;
-			{error, {already_started, P}} -> P;
-			{error, R} -> 
-				io:format("Error starting tcp client ~p~n", [R]),
-				exit({error, R})
-		end,
-    gen_tcp:controlling_process(CliSocket, Pid),
-    converse_tcp:set_socket(Pid, CliSocket),
-
-    %% Signal the network driver that we are ready to accept another connection
-    case prim_inet:async_accept(ListSock, -1) of
-	    {ok, NewRef} -> ok;
-			{error, NewRef} -> exit({async_accept, inet:format_error(NewRef)})
-		end,
-		{noreply, State#state{tcp_acceptor=NewRef}}
-		
-	catch exit:Why ->
-		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
-		{stop, Why, State}
-	end;
-
-handle_info({inet_async, ListSock, Ref, Error}, #state{listen_socket=ListSock, tcp_acceptor=Ref} = State) ->
-	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
-	{stop, Error, State};
-
-handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
-	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
-	{noreply, State};
-
 handle_info(Info, State) ->
 	io:format("Received info", [Info]),
   {noreply, State}.
@@ -179,15 +134,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%------------------------------------------------------------------------
 %%% Internal functions
 %%%------------------------------------------------------------------------
-
-set_sockopt(ListSock, CliSocket) ->
-    true = inet_db:register_socket(CliSocket, inet_tcp),
-    case prim_inet:getopts(ListSock, [active, nodelay, keepalive, delay_send, priority, tos]) of
-    {ok, Opts} ->
-        case prim_inet:setopts(CliSocket, Opts) of
-        ok    -> ok;
-        Error -> gen_tcp:close(CliSocket), Error
-        end;
-    Error ->
-        gen_tcp:close(CliSocket), Error
-    end.
