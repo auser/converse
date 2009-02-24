@@ -8,7 +8,8 @@
 -include_lib("kernel/include/inet.hrl").
 
 % Internal state for this socket process
--record(state,{	listen_pid,		% Pid of Listener
+-record(state,{	
+								listen_pid,		% Pid of Listener
 								listen_socket,		% Listener Socket
 								socket = undefined,	% Socket ref
 								successor = null,

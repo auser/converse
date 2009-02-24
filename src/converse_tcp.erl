@@ -4,7 +4,7 @@
 
 -behaviour(gen_fsm).
 
--export([start_link/1, set_socket/2]).
+-export([start_link/2, set_socket/2]).
 
 %% gen_fsm callbacks
 -export([init/1, handle_event/3,
@@ -26,8 +26,9 @@
 								queue,								% Denotes if we are using a queue or not
 								config = [],					% Starting config
 								connect_to_pid = 0,		% connection pid process
-								heart_timeout_ref,		% heartbeat timer reference
 								retry_connect_timer,	% timer for retry
+								heartbeat_fails = 0,	% Number of failed heartbeat requests
+								heartbeat_timeout_ref,% Timer ref for heartbeat
 								messages = 0,					% message queue
 								reg_name = 0,					% registered name for this process
 								connect_mode = ok,		% Connection mode (1)
@@ -48,12 +49,15 @@
 %%      respectively.
 %% @end
 %%-------------------------------------------------------------------------
-start_link(Config) ->
-   gen_fsm:start_link(?MODULE, [Config], []).
+start_link(Config, Name) ->
+   gen_fsm:start_link({local, Name}, ?MODULE, [Config], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
     gen_fsm:send_event(Pid, {socket_ready, Socket}).
 
+close_socket() ->
+	gen_fsm:send_event(self(), {close_tcp}).	
+	
 % ONLY FOR TESTING PURPOSES
 layers_receive(Msg) ->
 	case Msg of
@@ -73,21 +77,22 @@ layers_receive(Msg) ->
 %%          {stop, StopReason}
 %% @private
 %%-------------------------------------------------------------------------
-init([Config]) ->
+init([Reg_name, Config]) ->
+	io:format("Starting ~p~n", [?MODULE]),
 	process_flag(trap_exit, true),
 	Fun = config:parse(successor, Config), 
 	[Port,Queue] = config:fetch_or_default_config([port,queue], Config, ?DEFAULT_CONFIG),
 	Hostname = {0,0,0,0},
 	IpName = inet_parse:ntoa(my_ip()),
 	Name = config:parse_or_default(name, Config, IpName),
-	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, {0,0,0,0}),
 	
 	global:re_register_name(Reg_name, self()),
 	CanUseQueue = converse_queue:maybe_create_queue_table(Queue, Reg_name),
 	converse_queue:maybe_wait_for_queue_table(CanUseQueue, Reg_name),
+	% erlang:start_timer(0, self(), retry_connect),
 	
 	{ok, socket, #state{messages = ets:new(messages, []),
-	   reg_name = Reg_name, hostname = Hostname,
+	   reg_name = Reg_name, hostname = Hostname, 
 	   queue = CanUseQueue, connect_mode = converse_queue:anything_in_queue(CanUseQueue, Reg_name),
 	   config = Config, port = Port}}.
 
@@ -168,15 +173,35 @@ handle_info({tcp, Socket, Bin}, StateName, #state{socket=Socket} = State) ->
 	inet:setopts(Socket, [{active, once}]),
 	?MODULE:StateName({data, Msg}, State);
 
-handle_info({tcp_closed, Socket}, StateName, #state{socket=Socket, addr=Addr} = State) ->
-	% case Addr of
-	% 	undefined -> 
-		{stop, normal, State};
-		% TheAddr ->
-		%   error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
-		% 	New_MessageStore = safe_shutdown(State),
-		% 	erlang:start_timer(?RETRY_TIME, self(), retry_connect),
-		% 	{next_state, socket, State#state{socket = 0, messages = New_MessageStore, heart_timeout_ref = none}}
+handle_info({close_tcp}, StateName, State) ->
+	{stop, normal, State};
+
+handle_info({tcp_closed, Socket}, StateName, #state{socket=Socket, addr=Addr, heartbeat_timeout_ref = HeartRef} = State) ->
+	case HeartRef of
+		undefined -> {stop, normal, State};
+		_ ->
+			io:format("Closing tcp socket: ~p~n", [Socket]),
+		  error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
+			New_MessageStore = safe_shutdown(State),
+			erlang:start_timer(?RETRY_TIME, self(), retry_connect),
+			{next_state, socket, State#state{socket = 0, messages = New_MessageStore, heartbeat_timeout_ref = none}}			
+	end;
+	
+handle_info({socket, Socket}, StateName, State) ->
+	cancel_timer(State#state.retry_connect_timer),
+	New_ref = erlang:start_timer(?HEARTBEAT_TIMEOUT, self(), heartbeat_timeout),
+	NewState = State#state{socket = Socket},
+	inet:setopts(Socket, [{active, once}]),
+	{next_state, data, NewState#state{heartbeat_timeout_ref = New_ref, heartbeat_fails = 0}};
+	% case send_heart(NewState, New_ref) of
+	% 	ok -> 
+	% 		cancel_timer(State#state.heartbeat_timeout_ref), % cancel timer from last time
+	% 		{next_state, data, NewState#state{heartbeat_timeout_ref = New_ref, heart_fails = 0}};
+	% 	{error, _} ->
+	% 		cancel_timer(New_ref),
+	% 		gen_tcp:close(Socket),
+	% 		erlang:start_timer(?RETRY_TIME, self(), retry_connect),
+	% 		{next_state, socket, State}
 	% end;
 
 handle_info({timeout, Ref, retry_connect}, StateName, State) ->
@@ -187,6 +212,9 @@ handle_info({timeout, Ref, retry_connect}, StateName, State) ->
 	Ref1 = erlang:start_timer(?RETRY_TIME, self(), retry_connect),
 	{next_state, StateName, State#state{connect_to_pid = Pid, retry_connect_timer = Ref1}};
 
+handle_info({'EXIT', Pid, normal}, StateName, State) ->
+	{next_state, StateName, State};
+	
 handle_info(Info, StateName, State) ->
 	?TRACE("Received info", Info),
 	{next_state, StateName, State}.
@@ -220,11 +248,15 @@ get_function(Fun) ->
 			end
 	end.
 	
-safe_shutdown(State) ->
-    cancel_timer(State#state.heart_timeout_ref),
-    reply_to_all(State#state.messages),
-    alarm_handler:set_alarm({{client_lost, State#state.hostname}, []}),
-    ets:new(messages, []).
+safe_shutdown(#state{heartbeat_timeout_ref = HeartRef, messages = Messages} = State) ->
+	case HeartRef of
+		undefined -> exit(normal, "Undefined heart reference. Unknown connection~n");
+		_ ->
+			cancel_timer(HeartRef),
+			reply_to_all(Messages),
+			alarm_handler:set_alarm({{client_lost, State#state.hostname}, []}),
+			ets:new(messages, [])
+	end.
 
 reply_to_all(MessageStore) -> reply_to_all(ets:first(MessageStore), MessageStore).
 
@@ -246,7 +278,7 @@ reply_to_all({message,Ref}, MessageStore) ->
 			io:format("Received ~p in reply_to_all~n", [Anything])
 	end.
 	
-try_to_kill(null) -> ok;
+try_to_kill(0) -> ok;
 try_to_kill(Pid) -> exit(Pid, kill).
 
 cancel_timer(none) -> ok;
@@ -283,6 +315,6 @@ tcp_host(IPAddress) ->
 my_ip() ->
 	{ok, Hostname} = inet:gethostname(),
   case inet:gethostbyname(Hostname) of
-      {ok, #hostent{h_addr_list = Addrs}} ->  [Addr|_] = Addrs, Addr;
+      {ok, #hostent{h_addr_list = Addrs}} -> erlang:hd(Addrs);
       {error, _Reason} -> Hostname
   end.
