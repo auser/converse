@@ -22,6 +22,14 @@ start(ListenPid, ListenSocket, Secret, Successor) ->
 
 get_connection(Pid) -> gen_server:cast(Pid, get_conn).
 
+layers_receive(Msg) ->
+	case Msg of
+		{data, Socket, Msg} ->
+			io:format("Received ~p in layers_receive~n", [Msg]);
+		Else ->
+			io:format("Received other message in layers_receive: ~p~n", [Else])
+	end,
+	{ok, ?MODULE}.
 %%%----------------------------------------------------------------------
 %%% Callbacks
 %%%----------------------------------------------------------------------
@@ -83,15 +91,11 @@ handle_info({tcp, Socket, Packet}, #state{successor = Successor} = State) ->
 				false ->
 					{noreply, State}
 			end;
-		{send, Msg, Ref, Checksum} ->
-			case check({Msg, Ref}, State#state.secret, Checksum) of
-				true ->
-					Pid = spawn_link(?MODULE, worker, [Successor, Msg, Ref, Socket]),
-					{noreply, State};
-				false -> {noreply, State}
-			end;
-		Else ->
-			io:format("Socket Received Else: ~p~n",[Else]),
+		Msg ->			
+			case Successor of
+				undefined -> layers_receive(Msg);
+				Else -> layers:pass(Successor, Msg)
+			end,
 			{noreply, State}
 	end;
 
@@ -101,19 +105,6 @@ handle_info({tcp_closed, Socket}, State) ->
 handle_info({tcp_error, Socket, Reason}, State) ->
     gen_tcp:close(State#state.socket),
     {stop, converse_skt_error, State};
-
-
-handle_info({inet_async, ListSock, Ref, {ok, CliSocket}}, #state{socket=ListSock} = State) ->
-	try
-		io:format("Received inet_async in ~p~n", [?MODULE])
-	catch exit:Why ->
-		error_logger:error_msg("Error in async accept: ~p.\n", [Why]),
-		{stop, Why, State}
-	end;
-
-handle_info({inet_async, ListSock, Ref, Error}, #state{socket=ListSock} = State) ->
-	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),
-	{stop, Error, State};
 
 handle_info({'EXIT', _ListSock, _Ref, Error}, State) ->
 	error_logger:error_msg("Error in socket tcp_acceptor: ~p.\n", [Error]),

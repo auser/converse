@@ -95,9 +95,12 @@ handle_info({'EXIT', Pid, Reason}, State) when State#state.accept_pid == Pid ->
     create(self(), self()),
     {noreply,State};
 
+handle_info({'EXIT', Pid, converse_closed}, State) ->
+	{noreply, State};
+
 handle_info(Info, State) ->
-    io:format("converse server. Unexpected info: ~p~n",[Info]),
-    {noreply,State}.
+	io:format("~p. Unexpected info: ~p~n",[?MODULE, Info]),
+	{noreply,State}.
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2

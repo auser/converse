@@ -57,10 +57,11 @@ set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) -> gen_fsm:send_event(
 send(Addr, Msg) -> send(Addr, Msg, ?DEFAULT_TIMEOUT).	
 send(Addr, Msg, Timeout) ->
 	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Addr),
-	case global:whereis_name(Reg_name) of		
+	case global:whereis_name(Reg_name) of
 		undefined ->
 			% Spawn a new client connection
-			MyLocalClient = converse_utils:get_registered_name_for_address(tcp, client, {0,0,0,0}),
+			MyLocalClient = converse_utils:get_registered_name_for_address(tcp, client, Addr),
+			{ok, Sock} = gen_tcp:connect({0,0,0,0}, Port, [binary]).
 			Reply = gen_fsm:sync_send_event({global, MyLocalClient}, {create_connection, Addr}),
 			io:format("Reply from create_connection(~p): ~p~n", [Addr, Reply]),
 			gen_fsm:sync_send_event({global, Reg_name}, {send, Msg, Timeout});
