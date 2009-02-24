@@ -6,15 +6,17 @@
 
 %% application callbacks
 -export([start/2, stop/1]).
--export ([start_tcp_client/2]).
+-export ([start_client/2,start_client/1]).
 -export ([init/1]).
 
 %%%----------------------------------------------------------------------
 %%% Callback functions from application
 %%%----------------------------------------------------------------------
 
-start_tcp_client(Name, Config) -> 	
-	% supervisor:start_child(converse_tcp, [Name]).
+start_client(Config) ->
+	supervisor:start_child(converse_tcp, [Config]).
+	
+start_client(Name, Config) -> 	 
 	supervisor:start_link({local, Name}, converse_tcp, [Name, Config]),
 	global:whereis_name(Name).
 	
@@ -50,11 +52,10 @@ init([Module, Config]) ->
 	{ok,
 	    {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
 				[{ tcp_server,
-				    {converse_listener,start_link,[Config]},
-				    permanent,2000,worker,[converse_listener]
+				    {converse_listener,start_link,[tcp_listener, ?MODULE, converse_tcp, Config]}, 
+							permanent,2000,worker,[converse_listener]
 				},{ tcp_client,
-				    {supervisor,start_link,[{local, converse_tcp}, ?MODULE, [sup, Module, Config]]},
-				    permanent,infinity,supervisor,[]
+				    {supervisor,start_link,[{local, converse_tcp}, ?MODULE, [sup, Module, Config]]}, permanent,infinity,supervisor,[]
 				}]}
 	};
 

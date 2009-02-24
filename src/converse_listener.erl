@@ -1,35 +1,41 @@
 -module (converse_listener).
 -include ("converse.hrl").
-
 -behaviour(gen_server).
 
--record(state,{	listen_socket = [],
-								accept_pid = null,
-								tcp_acceptor = null,
-								successor = undefined,
-								secret = 0,
-								config = 0}).
-
 %% External API
--export([start_link/1,create/2]).
+-export([start_link/4]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
+-record(state, {
+                listener,       % Listening socket
+                acceptor,       % Asynchronous acceptor's internal reference
+                module,         % FSM handling module
+                sup_name,       % Supervisor's registered name
+								config,					% Local config
+								successor				% Layer's successor
+               }).
+
 %%--------------------------------------------------------------------
-%% @spec (Port::integer(), Module) -> {ok, Pid} | {error, Reason}
-%
+%% @spec (ListenerSupName, ConnectionSupName, Port::integer(), Module) -> Result
+%%          ListenerSupName   = atom()
+%%          ConnectionSupName = atom()
+%%          Result            = {ok, Pid} | {error, Reason}
+%%
 %% @doc Called by a supervisor to start the listening process.
+%%      `ListenerSupName' is the name given to the listening process
+%%      supervisor.  `ConnectionSupName' is the name given to the
+%%      supervisor of spawned client connections.  The listener will be
+%%      started on a given `Port'.  `Module' is the FSM implementation
+%%      of the user-level protocol.  This module must implement
+%%      `set_socket/2' function.
 %% @end
 %%----------------------------------------------------------------------
-start_link(Config) ->
-  Name = converse_utils:get_registered_name_for_address(tcp, listener, {0,0,0,0}),
-  gen_server:start_link({local, Name}, ?MODULE, [Config], []).
- 
-%% Access to this server from socket servers
-create(ServerPid, Pid) ->
-  gen_server:cast(ServerPid, {create, Pid}).
-				
+start_link(ListenerSupName, ConnectionSupName, Module, Config) when is_atom(Module) ->
+    gen_server:start_link({local, ListenerSupName}, ?MODULE, [ConnectionSupName, Module, Config], []).
+
 %%%------------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%------------------------------------------------------------------------
@@ -43,31 +49,49 @@ create(ServerPid, Pid) ->
 %% @doc Called by gen_server framework at process startup.
 %%      Create listening socket.
 %% @end
+%% @private
 %%----------------------------------------------------------------------
-init([Config]) ->
+init([ConnSupName, Module, Config]) ->
     process_flag(trap_exit, true),
-		
-		[Secret,Opts,Port,Successor] = config:fetch_or_default_config([secret,sock_opts,port,successor], Config, ?DEFAULT_CONFIG),
-		RealName = converse_utils:get_registered_name_for_address(tcp, client, {0,0,0,0}),
-		
-    case gen_tcp:listen(Port, Opts) of
-    {ok, Sock} ->
-	      Pid = case global:whereis_name(RealName) of
-	      	undefined -> 
-						% launch new converse_socket acceptor
-						converse_socket:start_link(self(), Sock, Secret, Successor);
-					P -> 
-						% converse_socket exists for this connection already
-						P
-	      end,
-				% gen_tcp:controlling_process(Sock, Pid),
-		    {ok, #state{listen_socket = Sock,
-										tcp_acceptor = Pid,
-										config = Config,
-                    successor = Successor}};
-    {error, Reason} ->
-        {stop, Reason}
+		[Port,Successor,SockOpts] = config:fetch_or_default_config([port,successor,sock_opts], Config, ?DEFAULT_CONFIG),
+    try
+        case listen_socket(Port, SockOpts) of
+        {ok, LSock}          -> ok;
+        Error                -> LSock = none, throw(Error)
+        end,
+
+        %%Create first accepting process
+        {ok, Ref} = prim_inet:async_accept(LSock, -1),
+        {ok, #state{listener = LSock,
+                    acceptor = Ref,
+                    module   = Module,
+										config = ConnSupName,
+                    sup_name = ConnSupName
+										}}
+    catch What ->
+        {stop, What}
     end.
+
+listen_socket(Port, Opts) when is_integer(Port) ->
+	Backlog = 30, gen_tcp:listen(Port, Opts ++ [{backlog, Backlog}]);
+
+listen_socket(Filename, Opts) when is_list(Filename) ->
+	try
+	    case unixdom_drv:start() of
+	    {ok, DrvPort}    -> ok;
+	    {error, Reason}  -> DrvPort = undefined, throw({error, Reason});
+	    {'EXIT', Reason} -> DrvPort = undefined, throw({error, Reason})
+	    end,
+	    file:delete(Filename),
+	    case unixdom_drv:listen(DrvPort, Filename, Opts) of
+	    {ok, LSock} ->
+	        {ok, DrvPort, LSock};
+	    Error ->
+	        Error
+	    end
+	catch What ->
+	    What
+	end.
 
 %%-------------------------------------------------------------------------
 %% @spec (Request, From, State) -> {reply, Reply, State}          |
@@ -80,7 +104,7 @@ init([Config]) ->
 %%      is returned, the server is stopped and `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------		
+%%-------------------------------------------------------------------------
 handle_call(Request, _From, State) ->
     {stop, {unknown_call, Request}, State}.
 
@@ -92,14 +116,9 @@ handle_call(Request, _From, State) ->
 %%      is returned, the server is stopped and `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------	
-handle_cast({create,Pid}, State) ->
-    {ok, NewPid} = converse_socket:start(self(), State#state.listen_socket, State#state.secret, State#state.successor),
-    converse_socket:get_connection(NewPid),
-    {noreply, State#state{accept_pid = NewPid}};
-	
+%%-------------------------------------------------------------------------
 handle_cast(_Msg, State) ->
-	{noreply, State}.
+    {noreply, State}.
 
 %%-------------------------------------------------------------------------
 %% @spec (Msg, State) ->{noreply, State}          |
@@ -110,10 +129,30 @@ handle_cast(_Msg, State) ->
 %%      `terminate/2' is called.
 %% @end
 %% @private
-%%-------------------------------------------------------------------------	
-handle_info(Info, State) ->
-	io:format("Received info", [Info]),
-  {noreply, State}.
+%%-------------------------------------------------------------------------
+handle_info({inet_async, ListSock, Ref, {ok, CliSocket}},
+            #state{listener=ListSock, acceptor=Ref, module=Module, sup_name=SupName} = State) ->
+    case set_sockopt(ListSock, CliSocket) of
+    ok ->
+        %% New client connected - spawn a new process using the simple_one_for_one
+        %% supervisor.
+        {ok, Pid} = converse_app:start_client(SupName),
+        gen_tcp:controlling_process(CliSocket, Pid),
+        %% Instruct the new FSM that it owns the socket.
+        Module:set_socket(Pid, CliSocket),
+        {ok, NewRef} = prim_inet:async_accept(ListSock, -1),
+        {noreply, State#state{acceptor=NewRef}};
+    {error, Reason} ->
+        error_logger:error_msg("Error setting socket options: ~p.\n", [Reason]),
+        {stop, Reason, State}
+    end;
+
+handle_info({inet_async, ListSock, Ref, Error}, #state{listener=ListSock, acceptor=Ref} = State) ->
+    error_logger:error_msg("Error in socket acceptor: ~p.\n", [Error]),
+    {stop, Error, State};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
 
 %%-------------------------------------------------------------------------
 %% @spec (Reason, State) -> any
@@ -123,9 +162,8 @@ handle_info(Info, State) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------
-terminate(_Reason, State) ->
-    gen_tcp:close(State#state.listen_socket),
-    ok.
+terminate(_Reason, #state{listener=LSock}) ->
+	gen_tcp:close(LSock).
 
 %%-------------------------------------------------------------------------
 %% @spec (OldVsn, State, Extra) -> {ok, NewState}
@@ -139,3 +177,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%%------------------------------------------------------------------------
 %%% Internal functions
 %%%------------------------------------------------------------------------
+
+%% Taken from prim_inet.  We are merely copying some socket options from the
+%% listening socket to the new client socket.
+set_sockopt(ListSock, CliSocket) ->
+    true = inet_db:register_socket(CliSocket, inet_tcp),
+    case prim_inet:getopts(ListSock, [active, nodelay, keepalive, delay_send, priority, tos]) of
+    {ok, Opts} ->
+        case prim_inet:setopts(CliSocket, Opts) of
+        ok    -> ok;
+        Error -> gen_tcp:close(CliSocket), Error
+        end;
+    Error ->
+        gen_tcp:close(CliSocket), Error
+    end.
