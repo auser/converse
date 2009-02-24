@@ -14,10 +14,10 @@
 %%%----------------------------------------------------------------------
 
 start_client(Config) ->
-	supervisor:start_child(converse_tcp, [Config]).
+	supervisor:start_child(tcp_client, [Config]).
 	
 start_client(Name, Config) -> 	 
-	supervisor:start_link({local, Name}, converse_tcp, [Name, Config]),
+	supervisor:start_link({local, Name}, tcp_client, [Name, Config]),
 	global:whereis_name(Name).
 	
 %%----------------------------------------------------------------------

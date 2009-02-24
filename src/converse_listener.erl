@@ -62,11 +62,11 @@ init([ConnSupName, Module, Config]) ->
 
         %%Create first accepting process
         {ok, Ref} = prim_inet:async_accept(LSock, -1),
-        {ok, #state{listener = LSock,
-                    acceptor = Ref,
-                    module   = Module,
-										config = ConnSupName,
-                    sup_name = ConnSupName
+        {ok, #state{listener 	= LSock,
+                    acceptor 	= Ref,
+                    module   	= Module,
+										config 		= Config,
+                    sup_name 	= ConnSupName
 										}}
     catch What ->
         {stop, What}
