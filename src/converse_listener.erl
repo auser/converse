@@ -53,9 +53,14 @@ init([Config]) ->
     case gen_tcp:listen(Port, Opts) of
     {ok, Sock} ->
 	      Pid = case global:whereis_name(RealName) of
-	      	undefined -> converse_socket:start_link(self(), Sock, Secret, Successor); % launch new converse_socket acceptor
-					P -> P% converse_socket exists for this connection already
+	      	undefined -> 
+						% launch new converse_socket acceptor
+						converse_socket:start_link(self(), Sock, Secret, Successor);
+					P -> 
+						% converse_socket exists for this connection already
+						P
 	      end,
+				% gen_tcp:controlling_process(Sock, Pid),
 		    {ok, #state{listen_socket = Sock,
 										tcp_acceptor = Pid,
 										config = Config,

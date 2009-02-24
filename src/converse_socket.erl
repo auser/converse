@@ -1,7 +1,7 @@
 -module (converse_socket).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start/4, get_connection/1, worker/4]).
+-export([start_link/4, get_connection/1, worker/4]).
 
 -behaviour(gen_server).
 
@@ -14,12 +14,13 @@
 								socket = undefined,	% Socket ref
 								successor = null,
 								config = 0,
+								tcp_acceptor,
 								secret = null}).		% Shared Secret
 
 %%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
-start(ListenPid, ListenSocket, Secret, Successor) ->
+start_link(ListenPid, ListenSocket, Secret, Successor) ->
 	gen_server:start_link(converse_socket, {ListenPid, ListenSocket, Secret, Successor},[]).
 
 get_connection(Pid) -> gen_server:cast(Pid, get_conn).
@@ -76,6 +77,7 @@ handle_cast(_Reply ,State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_info({tcp, Socket, Packet}, #state{successor = Successor} = State) ->
+	io:format("Received tcp socket~n"),
 	case catch converse_packet:decode(Packet) of
 		{heartbeat, Ref, Checksum} ->
 			case check(Ref, State#state.secret, Checksum) of
