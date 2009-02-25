@@ -1,14 +1,30 @@
 -module (converse).
 -include ("converse.hrl").
 
--export([send/2,send/3]).
--export ([start/2]).
+-behaviour(application).
+-define (APPLICATIONS_TO_START, []).
+ 
+%% application callbacks
+-export([start/2, stop/1]).
+-export ([init/1]).
+-export ([send_message/1]).
 
-start(Type, StartArgs) -> 
-  converse_app:start(Type, StartArgs).
+send_message(Msg) -> converse_tcp:send_message(Msg).
 
-start() -> application:start(?MODULE).
-stop() -> application:stop(?MODULE).
+start(_Type, Config) ->    
+    layers:start_bundle([
+      {"Applications", fun() -> [application:start(A) || A <- ?APPLICATIONS_TO_START] end},
+      {"Converse supervisor", fun() -> converse_sup:start_link() end},
+      {"Converse listener", fun() -> supervisor:start_link({local, ?MODULE}, ?MODULE, [Config]) end}
+    ]).
 
-start(normal, [Config]) ->
-  [Port] = 
+init([Config]) ->
+  TcpServerSup = { converse_tcp, {converse_tcp,start_link,[Config]}, permanent,2000,worker,[]},
+  {ok,
+   {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
+        [
+        TcpServerSup
+        ]}
+  }.
+
+stop(State) -> ok.
