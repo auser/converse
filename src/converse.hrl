@@ -8,7 +8,6 @@
 -define (RETRY_TIME, 6000).
 -define (SLOWDOWN_INTERVAL, 500).
 
--record(converse_message_queue, {index, message}).
 -define(LOG_MESSAGE(TAG, SIZE), converse_logger:log(TAG, SIZE)).
 
 -define (DEFAULT_SOCKET_OPTS, [binary,{packet,raw},{active,false}, {reuseaddr,true},{keepalive,true},{backlog,30}]).
@@ -28,3 +27,6 @@
 -ifdef(debug).
 -define (TRACE(X, M), io:format("TRACE ~p:~p ~p ~p~n" ,[?MODULE, ?LINE, X, M])).
 -endif.
+
+-define (MAXIMUM_RESTARTS, 10).
+-define (MAX_DELAY_TIME, 60).
