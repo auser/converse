@@ -8,6 +8,5 @@ encode(<<D>>) -> D;
 encode(Plain) when is_list(Plain) -> erlang:term_to_binary(Plain).
 
 decode(Packets) when is_list(Packets) -> [decode(P) || P <- Packets];
-decode(<<Pack>>) ->
-  Pack;
+decode(Packet) when is_binary(Packet) -> binary_to_term(Packet);
 decode(Packet) -> Packet.

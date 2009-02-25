@@ -51,9 +51,7 @@
 %% 
 %%     end.
 
-start_client(Host, Port, Length) ->
-     gen_tcp:connect(Host, Port,
-		     [binary, {active, true}, {length, Length}]).
+start_client(Host, Port, Length) -> gen_tcp:connect(Host, Port, [binary, {active, true}, {length, Length}]).
 					 
 %% Note when start_raw_server returns it should be ready to
 %% Immediately accept connections

@@ -1,5 +1,6 @@
 converse:start(normal, []).
-converse:send_message({data, "hey"}).
+converse:send_message("0.0.0.0", "hey").
+converse:cast_message("0.0.0.0", "hey").
 
 {ok, Sock} = gen_tcp:connect({0,0,0,0}, 22002, [binary]).
 gen_tcp:send(Sock, converse_socket:encode({data, "hey"})).
