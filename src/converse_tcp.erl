@@ -165,8 +165,8 @@ code_change(_OldVsn, State, _Extra) ->
 parse_packet(Socket, Server) ->
   receive
     {tcp, Socket, Bin} ->
-      NewServer = Server#server{socket = Socket},
-      DataToSend = {data, NewServer, converse_socket:decode(Bin)},
+      % NewServer = Server#server{socket = Socket},
+      DataToSend = {data, Socket, converse_socket:decode(Bin)},
       case Server#server.successor of
         undefined -> layers_receive(DataToSend);
         Suc -> layers:pass(Suc, DataToSend)
