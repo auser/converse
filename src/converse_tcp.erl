@@ -10,7 +10,7 @@
 -export([init/1, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
--export ([layers_receive/1]).
+-export ([layers_receive/1, send_message/2]).
 
 %% FSM States
 -export([
@@ -49,7 +49,10 @@ start_link(Config) ->
 	gen_fsm:start_link(?MODULE, [Config], []).
 
 set_socket(Pid, Socket) when is_pid(Pid), is_port(Socket) ->
-    gen_fsm:send_event(Pid, {socket_ready, Socket}).
+  gen_fsm:send_event(Pid, {socket_ready, Socket}).
+
+send_message(Pid, Msg) ->
+	gen_fsm:sync_send_event(Pid, {send, Msg}).
 
 close_socket() ->
 	gen_fsm:send_event(self(), {close_tcp}).	
@@ -57,10 +60,9 @@ close_socket() ->
 % ONLY FOR TESTING PURPOSES
 layers_receive(Msg) ->
 	case Msg of
-		{data, Socket, Data} -> 
+		{data, From, Data} -> 
 			io:format("~p received in layers_receive: ~p~n", [?MODULE, Data]),			
-			Reply = io_lib:format("received ~p", [Data]),
-			{reply, Reply};
+			From ! {reply, "thanks for the packet"};
 		Else -> 
 			io:format("~p received unknown message: ~p~n", [?MODULE, Else])
 	end.
@@ -83,16 +85,19 @@ init([Config]) ->
 	Fun = config:parse(successor, Config), 
 	[Port,Queue] = config:fetch_or_default_config([port,queue], Config, ?DEFAULT_CONFIG),
 	Hostname = {0,0,0,0},
-	IpName = inet_parse:ntoa(my_ip()),
+	IpName = inet_parse:ntoa(Hostname),
 	Name = config:parse_or_default(name, Config, IpName),
 	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Name),
 	CanUseQueue = converse_queue:maybe_create_queue_table(Queue, Reg_name),
 	converse_queue:maybe_wait_for_queue_table(CanUseQueue, Reg_name),
 	% erlang:start_timer(0, self(), retry_connect),
 	
+	global:re_register_name(Reg_name, self()),
+	io:format("Registering ~p as ~p~n", [?MODULE, Reg_name]),
+	
 	{ok, socket, #state{messages = ets:new(messages, []),
 	   	hostname = Hostname, 
-	   	queue = CanUseQueue, 
+	   	queue = CanUseQueue,
 			connect_mode = converse_queue:anything_in_queue(CanUseQueue, Reg_name),
 			reg_name = Reg_name,
 	   	config = Config, port = Port}}.
@@ -119,7 +124,7 @@ socket(Other, State) ->
 
 %% Notification event coming from client
 data({data, Data}, #state{addr=Ip, socket=S, successor=Successor} = State) ->
-	DataToSend = {data, S, Data},
+	DataToSend = {data, self(), Data},
 	Reply = case ?debug of
 		true -> layers_receive(DataToSend);
 		false -> layers:pass(Successor, DataToSend)
@@ -154,8 +159,12 @@ handle_event(Event, StateName, StateData) ->
 %%          {stop, Reason, Reply, NewStateData}
 %% @private
 %%-------------------------------------------------------------------------
+handle_sync_event({send, Msg}, From, StateName, #state{socket = LSocket} = State) ->
+	io:format("Send message: ~p~n", [Msg]),
+	{reply, ok, StateName, State};
+	
 handle_sync_event(Event, _From, StateName, StateData) ->
-    {stop, {StateName, undefined_event, Event}, StateData}.
+  {stop, {StateName, undefined_event, Event}, StateData}.
 
 %%-------------------------------------------------------------------------
 %% Func: handle_info/3
@@ -180,8 +189,7 @@ handle_info({tcp_closed, Socket}, StateName, #state{socket=Socket, addr=Addr} = 
 	error_logger:info_msg("~p Client ~p disconnected.\n", [self(), Addr]),
 	New_MessageStore = safe_shutdown(State),
 	erlang:start_timer(?RETRY_TIME, self(), retry_connect),
-	{next_state, socket, State#state{socket = 0, messages = New_MessageStore}}
-	;
+	{next_state, socket, State#state{socket = 0, messages = New_MessageStore}};
 	
 handle_info({socket, Socket}, StateName, State) ->
 	inet:setopts(Socket, [{active, once}]),
@@ -200,6 +208,9 @@ handle_info({timeout, Ref, retry_connect}, StateName, State) ->
 handle_info({'EXIT', Pid, normal}, StateName, State) ->
 	{next_state, StateName, State};
 	
+handle_info({reply, Reply}, StateName, State) ->
+	{next_state, StateName, State};
+
 handle_info(Info, StateName, State) ->
 	?TRACE("Received info", Info),
 	{next_state, StateName, State}.
@@ -234,44 +245,12 @@ get_function(Fun) ->
 	end.
 	
 safe_shutdown(#state{messages = Messages} = State) ->
-	% cancel_timer(RetryTimer),
-	reply_to_all(Messages),
 	alarm_handler:set_alarm({{client_lost, State#state.hostname}, []}),
 	ets:new(messages, []).
-
-reply_to_all(MessageStore) -> reply_to_all(ets:first(MessageStore), MessageStore).
-
-reply_to_all('$end_of_table', MessageStore) ->
-    ets:delete(MessageStore);
-reply_to_all({message,Ref}, MessageStore) ->
-	cancel_timer(Ref),
-	case ets:lookup(MessageStore, {message, Ref}) of
-		{{message, Ref}, null} ->			% Queued ones
-			reply_to_all(ets:next(MessageStore), MessageStore);
-		{{message, Ref}, From} ->
-			gen_fsm:reply(From, {error, link_down}),
-			reply_to_all(ets:next(MessageStore), MessageStore);
-		% [{{message,#Ref<0.0.0.89>},{<0.39.0>,#Ref<0.0.0.88>}}]
-		{{message, _Ref}, {From, Ref}} ->
-			% gen_fsm:reply(From, {error, link_down}),
-			reply_to_all(ets:next(MessageStore), MessageStore);
-		Anything ->
-			io:format("Received ~p in reply_to_all~n", [Anything])
-	end.
 	
 try_to_kill(0) -> ok;
 try_to_kill(Pid) -> exit(Pid, kill).
 
-cancel_timer(none) -> ok;
-cancel_timer(Ref) ->
-	erlang:cancel_timer(Ref),
-		receive
-			{timeout, Ref, _} ->
-				ok
-			after 0 ->
-				ok
-	end.
-	
 connect_to(Hostname, Port, Timeout, Main_server_pid) ->
 	case gen_tcp:connect(Hostname, Port, [binary, {active, false}, {packet, raw}], Timeout) of
 		{ok, Socket} ->
@@ -292,10 +271,3 @@ tcp_host(IPAddress) ->
 		{ok, #hostent{h_name = Name}} -> Name;
 		{error, _Reason} -> inet_parse:ntoa(IPAddress)
 	end.
-
-my_ip() ->
-	{ok, Hostname} = inet:gethostname(),
-  case inet:gethostbyname(Hostname) of
-      {ok, #hostent{h_addr_list = Addrs}} -> erlang:hd(Addrs);
-      {error, _Reason} -> Hostname
-  end.

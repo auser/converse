@@ -40,7 +40,7 @@ stop(State) ->
 %% Supervisor behaviour callbacks
 %%----------------------------------------------------------------------
 init([Module, Config]) ->		
-	TcpServerSup = { tcp_server, {converse_listener,start_link,[converse_tcp, Config]}, permanent,2000,worker,[converse_listener]},
+	TcpServerSup = { tcp_server, {converse_listener,start_link,[converse_tcp, Config]}, permanent,2000,worker,[]},
 	{ok,
 	    {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
 				[TcpServerSup,

@@ -18,6 +18,10 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
+-export ([send_with_reply/2]).
+
+-define (SERVER, ?MODULE).
+
 %%--------------------------------------------------------------------
 %% @spec (Port::integer(), Module) -> {ok, Pid} | {error, Reason}
 %
@@ -25,7 +29,14 @@
 %% @end
 %%----------------------------------------------------------------------
 start_link(Module, Config) when is_atom(Module) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [Module,Config], []).
+  gen_server:start_link({local, ?SERVER}, ?MODULE, [Module,Config], []).
+
+send_with_reply(Addr, Msg) when is_list(Addr) ->
+	{ok, AddrTuple} = inet_parse:address(Addr),
+	gen_server:call(?SERVER, {send_with_reply, AddrTuple, Msg});
+
+send_with_reply(Addr, Msg) ->
+	gen_server:call(?SERVER, {send_with_reply, Addr, Msg}).
 
 %%----------------------------------------------------------------------
 %% @spec (Port::integer()) -> {ok, State}           |
@@ -66,8 +77,20 @@ init([Module,Config]) ->
 %% @end
 %% @private
 %%-------------------------------------------------------------------------
+handle_call({send_with_reply, Addr, Msg}, From, #state{config = Config} = State) ->
+	[Port,SockOpts] = config:fetch_or_default_config([port,sock_opts], Config, ?DEFAULT_CONFIG),
+	{ok, Sock} = gen_tcp:connect(Addr, Port, SockOpts),
+	Reg_name = converse_utils:get_registered_name_for_address(tcp, client, Addr),
+	
+	Reply = case global:whereis_name(Reg_name) of
+		undefined -> io:format("Error. Sending to unknown address~n");
+		Pid -> converse_tcp:send_message(Pid, Msg)
+	end,
+	{reply, Reply, State};
+	
 handle_call(Request, _From, State) ->
-    {stop, {unknown_call, Request}, State}.
+  io:format("Handling call"),
+  {stop, {unknown_call, Request}, State}.
 
 %%-------------------------------------------------------------------------
 %% @spec (Msg, State) ->{noreply, State}          |
