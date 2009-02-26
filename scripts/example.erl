@@ -1,5 +1,6 @@
 converse:start(normal, []).
 converse:send_message("0.0.0.0", "hey").
+converse:send_message("0.0.0.0", 12345).
 converse:cast_message("0.0.0.0", "hey").
 
 f().

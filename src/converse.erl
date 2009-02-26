@@ -11,6 +11,7 @@
 
 send_message(Addr, Msg) -> converse_tcp:send_message(Addr, Msg).
 cast_message(Addr, Msg) -> converse_tcp:cast_message(Addr, Msg).
+reply(Socket, Msg) -> converse_tcp:reply_message(Socket, Msg).
 
 start(_Type, Config) ->    
     layers:start_bundle([

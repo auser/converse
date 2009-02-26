@@ -36,7 +36,10 @@ cast_message(Addr, Msg) ->
   gen_server:cast(?SERVER, {send, Addr, Msg}).
 
 send_message(Addr, Msg) ->
-  gen_server:call(?SERVER, {send, Addr, Msg}).
+  gen_server:call(?SERVER, {send, Addr, Msg}, ?DEFAULT_TIMEOUT).
+
+reply_message(Socket, Msg) ->
+  gen_server:call(?SERVER, {reply, Socket, Msg}, ?DEFAULT_TIMEOUT).
 
 layers_receive(Msg) ->
   case Msg of
@@ -102,6 +105,11 @@ init([Config]) ->
 handle_call({send, Addr, Msg}, From, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
   gen_tcp:send(Sock, converse_packet:encode(Msg)),
+  Reply = receive {reply, S, M} -> M after ?DEFAULT_TIMEOUT -> no_response end,
+  {reply, Reply, State};
+
+handle_call({reply, Socket, Msg}, From, State) ->
+  gen_tcp:send(Socket, converse_packet:encode(Msg)),
   Reply = receive {reply, S, M} -> M after ?DEFAULT_TIMEOUT -> no_response end,
   {reply, Reply, State};
   
@@ -176,7 +184,7 @@ parse_packet(Socket, Server) ->
       DataToSend = {data, NewServer, converse_packet:decode(Bin)},
       A = case Server#server.successor of
         undefined -> layers_receive(DataToSend);
-        Suc -> layers:pass(Suc, DataToSend)
+        Suc -> layers:pass(Suc, {data, Socket, converse_packet:decode(Bin)})
       end,
       parse_packet(Socket, Server);
     {tcp_closed, Socket} ->
