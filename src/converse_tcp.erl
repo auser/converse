@@ -180,7 +180,11 @@ parse_packet(Socket, Server) ->
   receive
     {tcp, Socket, Bin} ->
       NewServer = Server#server{socket = Socket},
-      DataToSend = {data, NewServer, Bin},
+      UnpackedBinary = case is_binary(Bin) of
+        true -> converse_packet:decode(Bin);
+        false -> Bin
+      end,
+      DataToSend = {data, NewServer, UnpackedBinary},
       case Server#server.successor of
         undefined -> layers_receive(DataToSend);
         Suc -> 
