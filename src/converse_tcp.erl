@@ -36,10 +36,18 @@ cast_message(Addr, Msg) ->
   gen_server:cast(?SERVER, {send, Addr, Msg}).
 
 send_message(Addr, Msg) ->
-  gen_server:call(?SERVER, {send, Addr, Msg}, ?DEFAULT_TIMEOUT).
-
+  Port = gen_server:call(?SERVER, {get_port}),
+  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
+  DataToSend = converse_packet:encode(Msg),
+  gen_tcp:send(Sock, DataToSend),
+  Reply = receive {tcp, S, M} -> converse_packet:decode(M);Else -> Else after 1000 -> no_response end,
+  Reply.
+  
+% reply_message(Pid, Msg) when is_pid(Pid) -> Pid ! {reply, Msg};
 reply_message(Socket, Msg) ->
-  gen_server:call(?SERVER, {reply, Socket, Msg}, ?DEFAULT_TIMEOUT).
+  io:format("Sending reply in reply_message~n"),
+  gen_tcp:send(Socket, converse_packet:encode(Msg)),
+  ok.
 
 layers_receive(Msg) ->
   case Msg of
@@ -102,17 +110,13 @@ init([Config]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 % Need to handle the case that the other server does not respond
-handle_call({send, Addr, Msg}, From, #converse_state{port = Port} = State) ->
+handle_call({send, Addr, Msg}, _From, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  gen_tcp:send(Sock, converse_packet:encode(Msg)),
-  Reply = receive {reply, S, M} -> M after ?DEFAULT_TIMEOUT -> no_response end,
+  DataToSend = converse_packet:encode(Msg),
+  Reply = gen_tcp:send(Sock, DataToSend),
   {reply, Reply, State};
-
-handle_call({reply, Socket, Msg}, From, State) ->
-  gen_tcp:send(Socket, converse_packet:encode(Msg)),
-  Reply = receive {reply, S, M} -> M after ?DEFAULT_TIMEOUT -> no_response end,
-  {reply, Reply, State};
-  
+handle_call({get_config}, _From, #converse_state{config = Config} = State) -> {reply, Config, State};
+handle_call({get_port}, _From, #converse_state{port = Port} = State) -> {reply, Port, State};
 handle_call(Request, _From, State) ->
   io:format("Received unknown request ~p~n", [Request]),
   Reply = ok,
@@ -147,10 +151,8 @@ handle_info({reply, Server, Reply}, State) when is_record(Server, server)->
   {noreply, State};
 handle_info({tcp_closed, Sock}, State) ->
   {noreply, State};
-handle_info({reply, Sock, Msg}, #converse_state{successor = Successor} = State) -> 
-  Receiver = undefined,
-  Server = #server{successor = Successor, receiver = Receiver},
-  parse_packet(Sock, Server),
+handle_info({reply, From, Msg}, #converse_state{successor = Successor} = State) -> 
+  
   {noreply, State};
 handle_info(Info, State) ->
   io:format("Received unknown info: ~p~n", [Info]),
@@ -181,10 +183,11 @@ parse_packet(Socket, Server) ->
   receive
     {tcp, Socket, Bin} ->
       NewServer = Server#server{socket = Socket},
-      DataToSend = {data, NewServer, converse_packet:decode(Bin)},
+      DataToSend = {data, NewServer, Bin},
       case Server#server.successor of
         undefined -> layers_receive(DataToSend);
-        Suc -> spawn(layers:pass(Suc, {data, Socket, converse_packet:decode(Bin)}))
+        Suc -> 
+          spawn_link(fun() -> layers:pass(Suc, {data, Socket, Bin}) end)
       end,
       parse_packet(Socket, Server);
     {tcp_closed, Socket} ->

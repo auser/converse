@@ -1,3 +1,6 @@
+layers:start([converse, converse_test_app], [{port, 22002}]).
+converse:send_message("0.0.0.0", {data, "TEsting for replies"}).
+
 converse:start(normal, []).
 converse:send_message("0.0.0.0", "hey").
 converse:send_message("0.0.0.0", 12345).
@@ -5,8 +8,8 @@ converse:cast_message("0.0.0.0", "hey").
 
 f().
 {ok, Sock} = gen_tcp:connect({0,0,0,0}, 22002, [binary]).
-gen_tcp:send(Sock, term_to_binary({data, "hey"})).
-receive {reply, S, M} -> M after 1000 -> no_response end.
+gen_tcp:send(Sock, term_to_binary({data, "TEsting for replies"})).
+receive {tcp, S, M} -> M after 1000 -> no_response end.
 
 receive
   {reply, Reply} -> io:format("Received ~p~n", [Reply])

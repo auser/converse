@@ -10,5 +10,5 @@ encode(Tuple) when is_tuple(Tuple) -> erlang:term_to_binary(Tuple);
 encode(B) -> B.
 
 decode(Packets) when is_list(Packets) -> [decode(P) || P <- Packets];
-decode(Packet) when is_binary(Packet) -> binary_to_term(Packet);
+decode(<<Packet>>) -> Packet;
 decode(Packet) -> Packet.
