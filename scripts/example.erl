@@ -2,8 +2,10 @@ converse:start(normal, []).
 converse:send_message("0.0.0.0", "hey").
 converse:cast_message("0.0.0.0", "hey").
 
+f().
 {ok, Sock} = gen_tcp:connect({0,0,0,0}, 22002, [binary]).
-gen_tcp:send(Sock, converse_socket:encode({data, "hey"})).
+gen_tcp:send(Sock, term_to_binary({data, "hey"})).
+receive {reply, S, M} -> M after 1000 -> no_response end.
 
 receive
   {reply, Reply} -> io:format("Received ~p~n", [Reply])

@@ -5,12 +5,11 @@
 
 -behaviour (gen_server).
 
--record (state, {
+-record (converse_state, {
                   port,             % port to start server on
                   accept_pid,       % Accepting PID
                   successor,        % Layer's acceptor
-                  config,           % Configuration for server
-                  connections       % Current connections
+                  config           % Configuration for server
                 }).
 
 -record (server, {
@@ -42,9 +41,12 @@ send_message(Addr, Msg) ->
 layers_receive(Msg) ->
   case Msg of
     {data, Server, Data} ->
-      io:format("~p received in layers_receive: ~p~n", [?MODULE, Data]),
-      Server#server.receiver ! {reply, Server, Data},
-      io:fwrite("response: ~p~n", [Data]);
+      LayersResponse = {reply, Data},
+      io:format("Sending ~p to ~p~n", [LayersResponse, Server#server.receiver]),
+      case Server#server.receiver of
+          undefined -> ok;
+          Rec -> Rec ! {reply, Server, LayersResponse}
+      end;
     Else ->
       io:format("~p received unknown message: ~p~n", [?MODULE, Else]),
       Else
@@ -80,12 +82,11 @@ init([Config]) ->
   
   {ok, AcceptPid} = tcp_server:start_raw_server(Port, Fun, 10240,0),  
   
-  {ok, #state{
+  {ok, #converse_state{
     port = Port,
     successor = Successor,
     accept_pid = AcceptPid,
-    config = Config,
-    connections = 0
+    config = Config
   }}.
   
 %%--------------------------------------------------------------------
@@ -98,11 +99,11 @@ init([Config]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 % Need to handle the case that the other server does not respond
-handle_call({send, Addr, Msg}, From, #state{port = Port} = State) ->
+handle_call({send, Addr, Msg}, From, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  DataToSend = converse_socket:encode(Msg),
-  Rep = gen_tcp:send(Sock, DataToSend),
-  {reply, Rep, State};
+  gen_tcp:send(Sock, converse_packet:encode(Msg)),
+  Reply = receive {reply, S, M} -> M after ?DEFAULT_TIMEOUT -> no_response end,
+  {reply, Reply, State};
   
 handle_call(Request, _From, State) ->
   io:format("Received unknown request ~p~n", [Request]),
@@ -115,9 +116,9 @@ handle_call(Request, _From, State) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast({send, Addr, Msg}, #state{port = Port} = State) ->
+handle_cast({send, Addr, Msg}, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  DataToSend = converse_socket:encode(Msg),
+  DataToSend = converse_packet:encode(Msg),
   gen_tcp:send(Sock, DataToSend),
   {noreply, State};
 handle_cast(stop, State) ->
@@ -133,9 +134,15 @@ handle_cast(_Msg, State) ->
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
 handle_info({'EXIT', _Pid, _Reason}, State) -> {noreply, State};
-handle_info({reply, Server, Reply}, State) ->
-  io:format("Received reply and TCP sending it off: ~p~n", [Reply]),
+handle_info({reply, Server, Reply}, State) when is_record(Server, server)->
   ?TCP_SEND(Server#server.socket, Reply),
+  {noreply, State};
+handle_info({tcp_closed, Sock}, State) ->
+  {noreply, State};
+handle_info({reply, Sock, Msg}, #converse_state{successor = Successor} = State) -> 
+  Receiver = undefined,
+  Server = #server{successor = Successor, receiver = Receiver},
+  parse_packet(Sock, Server),
   {noreply, State};
 handle_info(Info, State) ->
   io:format("Received unknown info: ~p~n", [Info]),
@@ -148,13 +155,13 @@ handle_info(Info, State) ->
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_Reason, #state{port = Port} = State) ->
+terminate(_Reason, #converse_state{port = Port} = State) ->
   tcp_server:stop(Port),
   ok.
 
 %%--------------------------------------------------------------------
 %% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% Description: Convert process state when code is changed
+%% Description: Convert process converse_state when code is changed
 %%--------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
@@ -165,9 +172,9 @@ code_change(_OldVsn, State, _Extra) ->
 parse_packet(Socket, Server) ->
   receive
     {tcp, Socket, Bin} ->
-      % NewServer = Server#server{socket = Socket},
-      DataToSend = {data, Socket, converse_socket:decode(Bin)},
-      case Server#server.successor of
+      NewServer = Server#server{socket = Socket},
+      DataToSend = {data, NewServer, converse_packet:decode(Bin)},
+      A = case Server#server.successor of
         undefined -> layers_receive(DataToSend);
         Suc -> layers:pass(Suc, DataToSend)
       end,

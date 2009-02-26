@@ -3,7 +3,7 @@
   {description, "Converse server"},
   {vsn, "1.0"},
   {id, "converse"},
-  {modules,      [converse_listener, converse_tcp, converse_socket]},
+  {modules,      [converse_listener, converse_tcp, converse_packet]},
   {registered,   []},
   {applications, [kernel, stdlib, sasl, crypto]},
   %%

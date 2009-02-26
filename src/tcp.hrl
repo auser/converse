@@ -1,6 +1,6 @@
 -define (TCP_SEND(Socket, Data), 
   fun() ->
-    DataToSend = converse_socket:encode(Data),
+    DataToSend = converse_packet:encode(Data),
     case gen_tcp:send(Socket, DataToSend) of
       ok -> ok;
       {error, close} -> ok;
