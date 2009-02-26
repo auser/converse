@@ -38,15 +38,15 @@ cast_message(Addr, Msg) ->
 send_message(Addr, Msg) ->
   Port = gen_server:call(?SERVER, {get_port}),
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  DataToSend = converse_packet:encode(Msg),
+  DataToSend = converse_packet:pack(Msg),
   gen_tcp:send(Sock, DataToSend),
-  Reply = receive {tcp, S, M} -> converse_packet:decode(M);Else -> Else after 1000 -> no_response end,
+  Reply = receive {tcp, S, M} -> converse_packet:unpack(M);Else -> Else after 1000 -> no_response end,
   Reply.
   
 % reply_message(Pid, Msg) when is_pid(Pid) -> Pid ! {reply, Msg};
 reply_message(Socket, Msg) ->
   io:format("Sending reply in reply_message~n"),
-  gen_tcp:send(Socket, converse_packet:encode(Msg)),
+  gen_tcp:send(Socket, converse_packet:pack(Msg)),
   ok.
 
 layers_receive(Msg) ->
@@ -109,7 +109,7 @@ init([Config]) ->
 % Need to handle the case that the other server does not respond
 handle_call({send, Addr, Msg}, _From, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  DataToSend = converse_packet:encode(Msg),
+  DataToSend = converse_packet:pack(Msg),
   Reply = gen_tcp:send(Sock, DataToSend),
   {reply, Reply, State};
 handle_call({get_config}, _From, #converse_state{config = Config} = State) -> {reply, Config, State};
@@ -127,7 +127,7 @@ handle_call(Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast({send, Addr, Msg}, #converse_state{port = Port} = State) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
-  DataToSend = converse_packet:encode(Msg),
+  DataToSend = converse_packet:pack(Msg),
   gen_tcp:send(Sock, DataToSend),
   {noreply, State};
 handle_cast(stop, State) ->
@@ -180,15 +180,12 @@ parse_packet(Socket, Server) ->
   receive
     {tcp, Socket, Bin} ->
       NewServer = Server#server{socket = Socket},
-      UnpackedBinary = case is_binary(Bin) of
-        true -> converse_packet:decode(Bin);
-        false -> Bin
-      end,
-      DataToSend = {data, NewServer, UnpackedBinary},
+      UnpackedData = converse_packet:unpack(Bin),
+      DataToSend = {data, NewServer, UnpackedData},
       case Server#server.successor of
         undefined -> layers_receive(DataToSend);
         Suc -> 
-          spawn_link(fun() -> layers:pass(Suc, {data, Socket, UnpackedBinary}) end)
+          spawn_link(fun() -> layers:pass(Suc, {data, Socket, UnpackedData}) end)
       end,
       parse_packet(Socket, Server);
     {tcp_closed, Socket} ->

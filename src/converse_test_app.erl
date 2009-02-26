@@ -19,14 +19,13 @@ init([Config]) ->
 	io:format("Starting converse_test_app (init) with ~p~n", [Config]).
 	
 test() ->
-	converse:open_and_send({0,0,0,0}, ?PORT, {data, whisper:encrypt("hi")}).
+	converse:open_and_send({0,0,0,0}, ?PORT, {data, "hi"}).
 
 layers_receive(Msg) ->
   case Msg of
     {data, Socket, Data} ->
       io:format("Unencrypted in ~p data: ~p~n", [?MODULE, Data]),
-      Reply = converse:reply(Socket, {data, "Thanks!"}),
-      io:format("Reply is: ~p~n", [Reply]),
+      Reply = converse:reply(Socket, {data, Data}),
       Reply;
     Anything ->
       io:format("layers_receive recieved: ~p~n", [Anything])
