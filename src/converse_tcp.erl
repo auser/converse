@@ -37,7 +37,7 @@ cast_message(Addr, Msg) ->
 
 send_message(Addr, Msg) ->
   Port = gen_server:call(?SERVER, {get_port}),
-  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
+  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, 2}, {active, true}]),
   DataToSend = converse_packet:pack(Msg),
   gen_tcp:send(Sock, DataToSend),
   Reply = receive {tcp, S, M} -> converse_packet:unpack(M);Else -> Else after 1000 -> no_response end,
@@ -88,7 +88,7 @@ init([Config]) ->
   
   tcp_server:stop(Port),
   
-  {ok, AcceptPid} = tcp_server:start_raw_server(Port, Fun, 10240,0),  
+  {ok, AcceptPid} = tcp_server:start_raw_server(Port, Fun, 10240, 4),  
   
   {ok, #converse_state{
     port = Port,
@@ -108,7 +108,7 @@ init([Config]) ->
 %%--------------------------------------------------------------------
 % Need to handle the case that the other server does not respond
 handle_call({send, Addr, Msg}, _From, #converse_state{port = Port} = State) ->
-  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
+  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, 2}, {active, true}]),
   DataToSend = converse_packet:pack(Msg),
   Reply = gen_tcp:send(Sock, DataToSend),
   {reply, Reply, State};
@@ -126,7 +126,7 @@ handle_call(Request, _From, State) ->
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 handle_cast({send, Addr, Msg}, #converse_state{port = Port} = State) ->
-  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, raw}, {active, true}]),
+  {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, 2}, {active, true}]),
   DataToSend = converse_packet:pack(Msg),
   gen_tcp:send(Sock, DataToSend),
   {noreply, State};
