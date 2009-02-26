@@ -51,16 +51,13 @@ reply_message(Socket, Msg) ->
 
 layers_receive(Msg) ->
   case Msg of
-    {data, Server, Data} ->
-      LayersResponse = {reply, Data},
-      io:format("Sending ~p to ~p~n", [LayersResponse, Server#server.receiver]),
-      case Server#server.receiver of
-          undefined -> ok;
-          Rec -> Rec ! {reply, Server, LayersResponse}
-      end;
-    Else ->
-      io:format("~p received unknown message: ~p~n", [?MODULE, Else]),
-      Else
+    {data, Socket, Data} ->
+      io:format("Unencrypted in ~p data: ~p~n", [?MODULE, Data]),
+      Reply = converse:reply(Socket, {data, "Thanks!"}),
+      io:format("Reply is: ~p~n", [Reply]),
+      Reply;
+    Anything ->
+      io:format("layers_receive recieved: ~p~n", [Anything])
   end.
 %%--------------------------------------------------------------------
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
