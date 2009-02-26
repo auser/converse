@@ -25,7 +25,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
          
--export ([cast_message/2, send_message/2, layers_receive/1]).
+-export ([cast_message/2, send_message/2, layers_receive/1, reply_message/2]).
 
 -define(SERVER, ?MODULE).
 
