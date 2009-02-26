@@ -88,7 +88,7 @@ init([Config]) ->
   
   tcp_server:stop(Port),
   
-  {ok, AcceptPid} = tcp_server:start_raw_server(Port, Fun, 10240, 4),  
+  {ok, AcceptPid} = tcp_server:start_raw_server(Port, Fun, 10240, 2),  
   
   {ok, #converse_state{
     port = Port,
