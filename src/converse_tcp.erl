@@ -182,9 +182,9 @@ parse_packet(Socket, Server) ->
     {tcp, Socket, Bin} ->
       NewServer = Server#server{socket = Socket},
       DataToSend = {data, NewServer, converse_packet:decode(Bin)},
-      A = case Server#server.successor of
+      case Server#server.successor of
         undefined -> layers_receive(DataToSend);
-        Suc -> layers:pass(Suc, {data, Socket, converse_packet:decode(Bin)})
+        Suc -> spawn(layers:pass(Suc, {data, Socket, converse_packet:decode(Bin)}))
       end,
       parse_packet(Socket, Server);
     {tcp_closed, Socket} ->
