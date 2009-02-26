@@ -188,7 +188,7 @@ parse_packet(Socket, Server) ->
       case Server#server.successor of
         undefined -> layers_receive(DataToSend);
         Suc -> 
-          spawn_link(fun() -> layers:pass(Suc, {data, Socket, Bin}) end)
+          spawn_link(fun() -> layers:pass(Suc, {data, Socket, UnpackedBinary}) end)
       end,
       parse_packet(Socket, Server);
     {tcp_closed, Socket} ->
