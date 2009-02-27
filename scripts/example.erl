@@ -24,3 +24,10 @@ converse:send({0,0,0,0}, {"hi"}).
 layers:start([converse, layers_test_app], []).
 converse:send({0,0,0,0}, {"hi"}).
 converse:send({0,0,0,1}, {"hi"}).
+
+converse_udp:start_link(22003).
+converse_udp:send_message({0,0,0,0}, 22003, {"hey"}).
+
+layers:start([converse, converse_test_app], [{port, 22002}]).
+converse:cast_message({0,0,0,0}, {"hey from cast"}).
+converse:send_message({0,0,0,0}, {"hey from send"}).

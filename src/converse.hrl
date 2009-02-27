@@ -1,6 +1,8 @@
 -define (debug, true).
 
 -define (PORT, 22002).
+-define (UDPPORT, 22003).
+
 -define (DEFAULT_TIMEOUT, 5000).
 -define (HEARTBEAT_TIMEOUT, 8000).
 -define (HEARTBEAT_PERIOD, 15000).
@@ -14,6 +16,7 @@
 
 -define (DEFAULT_CONFIG, [
 					{port, ?PORT},
+					{udp_port, ?UDPPORT},
 					{timeout, ?DEFAULT_TIMEOUT},
 					{heartbeat_timeout, ?HEARTBEAT_TIMEOUT},
 					{close_after_fails, ?MAX_FAIL_ATTEMPTS},
