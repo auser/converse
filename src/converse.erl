@@ -8,8 +8,11 @@
 -export([start/2, stop/1]).
 -export ([init/1]).
 -export ([send_message/2, cast_message/2, reply/2]).
+-export ([send/2, cast/2]).
 
+send(Addr, Msg) -> send_message(Addr, Msg).
 send_message(Addr, Msg) -> converse_tcp:send_message(Addr, Msg).
+cast(Addr, Msg) -> cast_message(Addr, Msg).
 cast_message(Addr, Msg) -> converse_tcp:cast_message(Addr, Msg).
 reply(Socket, Msg) -> converse_tcp:reply_message(Socket, Msg).
 
