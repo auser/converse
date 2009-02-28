@@ -42,7 +42,7 @@ send_message(Addr, Msg) ->
   {ok, Sock} = gen_tcp:connect(Addr, Port, [binary, {packet, 2}, {active, true}]),
   DataToSend = converse_packet:pack(Msg),
   gen_tcp:send(Sock, DataToSend),
-  Reply = receive {tcp, S, M} -> converse_packet:unpack(M);Else -> Else after 1000 -> no_response end,
+  Reply = receive {tcp, S, M} -> converse_packet:unpack(M);Else -> Else after ?DEFAULT_TIMEOUT -> no_response end,
   Reply.
   
 % reply_message(Pid, Msg) when is_pid(Pid) -> Pid ! {reply, Msg};
@@ -56,7 +56,7 @@ layers_receive(Msg) ->
       Reply = converse:reply(Socket, {data, "Thanks!"}),
       Reply;
     Anything ->
-      io:format("layers_receive recieved: ~p~n", [Anything])
+      io:format("layers_receive Received: ~p (in ~p)~n", [Anything, ?MODULE])
   end.
 %%--------------------------------------------------------------------
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
@@ -208,8 +208,9 @@ pass_to_successor(Socket, Bin, Server) ->
   NewServer = Server#server{socket = Socket},
   UnpackedData = converse_packet:unpack(Bin),
   DataToSend = {data, NewServer, UnpackedData},
+  io:format("Passing to successor: ~p (in ~p)~n", [Server#server.successor, ?MODULE]),
   case Server#server.successor of
     undefined -> layers_receive(DataToSend);
-    Suc -> spawn_link(fun() -> layers:pass(Suc, {data, Socket, UnpackedData}) end)
+    Suc -> spawn_link(fun() -> layers:pass(Suc, {converse_raw_packet, Socket, UnpackedData}) end)
   end,
   parse_packet(Socket, Server).
