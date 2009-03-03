@@ -12,14 +12,12 @@ start_layers() ->
 
 start(_Type, Config) ->
 	io:format("Starting converse_test_app with ~p~n", [Config]).
-	% ,Self = self(), Fun = config:parse(successor, Config)
-	% ,layers:register_process(Fun, Self).
 	
 init([Config]) ->
 	io:format("Starting converse_test_app (init) with ~p~n", [Config]).
 	
 test() ->
-	converse:open_and_send({0,0,0,0}, ?PORT, {data, "hi"}).
+	converse:send_message(9009, {ping}).
 
 layers_receive(Msg) ->
   case Msg of
