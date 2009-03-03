@@ -18,8 +18,7 @@ send_message(Addr, Port, Msg) ->
     {ok, {_,_,Reply}} -> Reply;
     Error -> no_reply
   after
-    ?DEFAULT_TIMEOUT ->
-      no_reply
+    500 -> no_reply
   end.  
   
 cast_message(Addr, Msg) -> converse_upd:cast_message(Addr, Msg).
