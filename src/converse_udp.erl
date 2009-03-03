@@ -59,7 +59,7 @@ send_to_socket(Socket, IP, Port, Message) -> gen_server:cast({send_to_socket, So
 %%--------------------------------------------------------------------
 init([Server, Config]) ->
   process_flag(trap_exit, true),
-  [Port] = config:fetch_or_default_config([port], Config, ?DEFAULT_CONFIG),
+  [Port,Successor] = config:fetch_or_default_config([port,successor], Config, ?DEFAULT_CONFIG),
   
   case open_udp(Port) of
     error ->
@@ -69,6 +69,7 @@ init([Server, Config]) ->
       State = #udp_state {
         socket = Socket,
         config = Config,
+        successor = Successor,
         debug = ?debug
       },
       {ok, State}
