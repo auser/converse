@@ -10,7 +10,12 @@
 -define (RETRY_TIME, 6000).
 -define (SLOWDOWN_INTERVAL, 500).
 
--define(LOG_MESSAGE(TAG, SIZE), converse_logger:log(TAG, SIZE)).
+-define (LOG_MESSAGE (Message), converse_logger:append({erlang:localtime(), ?MODULE, ?LINE, Message})).
+-define (DEBUG_LOG (Bool, Message, Opts), 
+  case Bool of true -> 
+    io:format(Message, Opts),
+    ?LOG_MESSAGE(io_lib:fwrite(Message, Opts)); 
+  _ -> ok end).
 
 -define (DEFAULT_SOCKET_OPTS, [binary,{packet,raw},{active,false}, {reuseaddr,true},{keepalive,true},{backlog,30}]).
 

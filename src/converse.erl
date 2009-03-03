@@ -25,11 +25,6 @@ start(_Type, Config) ->
 
 init([Config]) ->
   TcpServerSup = { converse_tcp, {converse_tcp,start_link,[Config]}, permanent,2000,worker,[]},
-  {ok,
-   {_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},
-        [
-        TcpServerSup
-        ]}
-  }.
+  {ok,{_SupFlags = {one_for_one, ?MAXIMUM_RESTARTS, ?MAX_DELAY_TIME},[TcpServerSup]}}.
 
 stop(State) -> ok.
